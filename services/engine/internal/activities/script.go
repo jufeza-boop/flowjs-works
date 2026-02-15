@@ -42,16 +42,7 @@ func (a *ScriptActivity) Execute(input map[string]interface{}, config map[string
 	}
 	
 	// Execute the script and capture errors
-	var result goja.Value
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				err = fmt.Errorf("JavaScript runtime panic: %v", r)
-			}
-		}()
-		
-		result, err = vm.RunString(scriptStr)
-	}()
+	result, err := vm.RunString(scriptStr)
 	
 	if err != nil {
 		// Handle JS syntax errors and runtime errors
