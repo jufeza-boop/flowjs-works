@@ -1,0 +1,12 @@
+{
+  "body": {
+    "email": "user@example.com",
+    "name": "Test User",
+    "age": 30
+  },
+  "headers": {
+    "content-type": "application/json",
+    "date": "2026-02-15T17:31:50Z",
+    "authorization": "Bearer token123"
+  }
+}
