@@ -1,0 +1,33 @@
+{
+  "definition": {
+    "id": "script-error-test",
+    "version": "1.0.0",
+    "name": "Script Error Test Process",
+    "description": "Test error handling in script_ts",
+    "settings": {
+      "persistence": "full",
+      "timeout": 30000,
+      "error_strategy": "stop_and_rollback"
+    }
+  },
+  "trigger": {
+    "id": "trg_01",
+    "type": "http_webhook",
+    "config": {
+      "path": "/v1/error-test",
+      "method": "POST"
+    }
+  },
+  "nodes": [
+    {
+      "id": "syntax_error_script",
+      "type": "script_ts",
+      "description": "Script with syntax error",
+      "input_mapping": {
+        "value": "$.trigger.body.value"
+      },
+      "script": "const result = { value: input.value; result;"
+    }
+  ],
+  "transitions": []
+}

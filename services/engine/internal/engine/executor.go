@@ -110,6 +110,17 @@ func (e *ProcessExecutor) executeNode(node *models.Node, ctx *models.ExecutionCo
 		input = make(map[string]interface{})
 	}
 	
+	// Prepare config for activity execution
+	config := node.Config
+	if config == nil {
+		config = make(map[string]interface{})
+	}
+	
+	// For script_ts nodes, add the script to config if it exists
+	if node.Type == "script_ts" && node.Script != "" {
+		config["script"] = node.Script
+	}
+	
 	// Get the activity implementation
 	activity, ok := e.activityRegistry.Get(node.Type)
 	if !ok {
@@ -125,7 +136,7 @@ func (e *ProcessExecutor) executeNode(node *models.Node, ctx *models.ExecutionCo
 	}
 	
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		output, err = activity.Execute(input, node.Config, ctx)
+		output, err = activity.Execute(input, config, ctx)
 		
 		if err == nil {
 			// Success
