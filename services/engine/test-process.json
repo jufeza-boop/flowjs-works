@@ -1,0 +1,57 @@
+{
+  "definition": {
+    "id": "test-process",
+    "version": "1.0.0",
+    "name": "Test Process with Logger and Context",
+    "description": "Test the runner with various activities",
+    "settings": {
+      "persistence": "full",
+      "timeout": 30000,
+      "error_strategy": "stop_and_rollback"
+    }
+  },
+  "trigger": {
+    "id": "trg_01",
+    "type": "http_webhook",
+    "config": {
+      "path": "/v1/test",
+      "method": "POST"
+    }
+  },
+  "nodes": [
+    {
+      "id": "log_trigger",
+      "type": "logger",
+      "description": "Log the complete trigger data",
+      "input_mapping": {
+        "message": "$.trigger"
+      },
+      "config": {
+        "level": "info"
+      }
+    },
+    {
+      "id": "log_specific_field",
+      "type": "logger",
+      "description": "Log a specific field from the trigger",
+      "input_mapping": {
+        "message": "$.trigger.body.email"
+      },
+      "config": {
+        "level": "info"
+      }
+    },
+    {
+      "id": "log_previous_output",
+      "type": "logger",
+      "description": "Log the output from a previous node",
+      "input_mapping": {
+        "message": "$.nodes.log_trigger.output"
+      },
+      "config": {
+        "level": "info"
+      }
+    }
+  ],
+  "transitions": []
+}

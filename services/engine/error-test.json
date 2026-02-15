@@ -1,0 +1,60 @@
+{
+  "definition": {
+    "id": "error-test-process",
+    "version": "1.0.0",
+    "name": "Error Test Process",
+    "description": "Test error handling",
+    "settings": {
+      "persistence": "full",
+      "timeout": 30000,
+      "error_strategy": "stop_and_rollback"
+    }
+  },
+  "trigger": {
+    "id": "trg_01",
+    "type": "http_webhook",
+    "config": {
+      "path": "/v1/error-test",
+      "method": "POST"
+    }
+  },
+  "nodes": [
+    {
+      "id": "log_start",
+      "type": "logger",
+      "description": "Log start",
+      "input_mapping": {
+        "message": "Process started"
+      },
+      "config": {
+        "level": "info"
+      }
+    },
+    {
+      "id": "call_invalid_api",
+      "type": "http",
+      "description": "Call an API that will fail",
+      "config": {
+        "url": "https://httpbin.org/status/500",
+        "method": "GET"
+      },
+      "retry_policy": {
+        "max_attempts": 2,
+        "interval": "1s",
+        "type": "fixed"
+      }
+    },
+    {
+      "id": "log_end",
+      "type": "logger",
+      "description": "This should not execute",
+      "input_mapping": {
+        "message": "Process ended"
+      },
+      "config": {
+        "level": "info"
+      }
+    }
+  ],
+  "transitions": []
+}
