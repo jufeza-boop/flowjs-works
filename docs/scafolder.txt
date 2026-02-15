@@ -1,0 +1,13 @@
+json-flow/
+├── apps/
+│   └── designer/           # Frontend (React + React Flow)
+├── services/
+│   ├── engine/             # El motor "Runner" (Go)
+│   ├── manager/            # API de gestión y orquestación (Node.js/Go)
+│   └── audit-logger/       # Servicio de ingesta de logs (Go)
+├── packages/
+│   ├── dsl-schema/         # Definiciones JSON Schema compartidas
+│   └── types/              # Tipos compartidos (si usas TS en varios sitios)
+├── deployments/            # Docker Compose, K8s manifests, Helm charts
+├── docs/                   # Toda la documentación que hemos generado
+└── README.md

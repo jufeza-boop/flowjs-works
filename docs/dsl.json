@@ -1,0 +1,67 @@
+{
+  "definition": {
+    "id": "user-onboarding-process",
+    "version": "1.2.0",
+    "name": "Onboarding de Usuarios",
+    "description": "Recibe un webhook, guarda en DB y notifica por Slack",
+    "settings": {
+      "persistence": "full",
+      "timeout": 30000,
+      "error_strategy": "stop_and_rollback"
+    }
+  },
+
+  "trigger": {
+    "id": "trg_01",
+    "type": "http_webhook",
+    "config": {
+      "path": "/v1/register",
+      "method": "POST",
+      "schema_validation": "./schemas/user_input.json"
+    }
+  },
+
+  "nodes": [
+    {
+      "id": "map_initial_data",
+      "type": "script_ts",
+      "description": "Normalizar datos de entrada",
+      "input_mapping": {
+        "raw_data": "$.trigger.body",
+        "timestamp": "$.trigger.headers.date"
+      },
+      "script": "export default (input) => { return { email: input.raw_data.email.toLowerCase(), active: true }; }",
+      "next": ["db_insert_user"]
+    },
+    {
+      "id": "db_insert_user",
+      "type": "sql_insert",
+      "config": {
+        "datasource": "postgres_main",
+        "table": "users"
+      },
+      "input_mapping": {
+        "fields": "$.nodes.map_initial_data.output"
+      },
+      "retry_policy": {
+        "max_attempts": 3,
+        "interval": "2s",
+        "type": "exponential"
+      },
+      "next": ["check_success", "on_db_error"]
+    }
+  ],
+
+  "transitions": [
+    {
+      "from": "db_insert_user",
+      "to": "send_welcome_email",
+      "condition": "$.nodes.db_insert_user.status == 'success'"
+    },
+    {
+      "from": "db_insert_user",
+      "to": "log_error",
+      "condition": "$.nodes.db_insert_user.status == 'error'"
+    }
+  ]
+}

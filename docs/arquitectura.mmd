@@ -1,0 +1,47 @@
+graph TB
+    subgraph "Control Plane (Gestión)"
+        UI[Designer UI - React Flow]
+        API[Manager API - Node/Go]
+        Prov[Provisioner - K8s/Docker Controller]
+        ConfigDB[(Config DB - Postgres)]
+    end
+
+    subgraph "Data Plane (Ejecución por Flujo)"
+        direction TB
+        subgraph "Pod / Microservicio - Flujo A"
+            EngineA[Go Runtime Engine]
+            SandboxA[JS/TS Sandbox - Goja]
+        end
+        subgraph "Pod / Microservicio - Flujo B"
+            EngineB[Go Runtime Engine]
+            SandboxB[JS/TS Sandbox - Goja]
+        end
+    end
+
+    subgraph "Observabilidad & Persistencia"
+        Bus{Internal Bus - NATS/Redis}
+        Logger[Audit Logger Service]
+        AuditDB[(Audit DB - Postgres JSONB)]
+    end
+
+    %% Relaciones Control Plane
+    UI <-->|Diseño DSL| API
+    API <-->|Persistencia| ConfigDB
+    API -->|Orden de Despliegue| Prov
+    Prov -->|Instancia Runner| EngineA
+    Prov -->|Instancia Runner| EngineB
+
+    %% Relaciones Ejecución
+    EngineA <-->|Transformaciones| SandboxA
+    EngineB <-->|Transformaciones| SandboxB
+
+    %% Relaciones Auditoría
+    EngineA -.->|Eventos Asíncronos| Bus
+    EngineB -.->|Eventos Asíncronos| Bus
+    Bus --> Logger
+    Logger --> AuditDB
+    UI -.->|Consulta de Trazas| AuditDB
+
+    %% Sistemas Externos
+    ExtSrc[Sistemas Externos / Triggers] --> EngineA
+    EngineA --> ExtDest[APIs / DBs / Cloud]

@@ -1,7 +1,7 @@
-# JsonBW# Especificación de Requisitos de Software (ERS) - Proyecto: "FLOWJS-WORKS"
+# Especificación de Requisitos de Software (ERS) - Proyecto: "JSON-Flow"
 
 ## 1. Introducción
-El sistema "FLOWJS-WORKS" es una plataforma de integración iPaaS de alto rendimiento diseñada para desarrolladores (Low-Code). Su objetivo es sustituir la pesadez de herramientas legacy basadas en XML (como TIBCO BW) por una arquitectura de microservicios ligera, nativa en JSON y extensible mediante JavaScript/TypeScript.
+El sistema "JSON-Flow" es una plataforma de integración iPaaS de alto rendimiento diseñada para desarrolladores (Low-Code). Su objetivo es sustituir la pesadez de herramientas legacy basadas en XML (como TIBCO BW) por una arquitectura de microservicios ligera, nativa en JSON y extensible mediante JavaScript/TypeScript.
 
 ---
 

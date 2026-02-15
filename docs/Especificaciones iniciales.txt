@@ -1,0 +1,16 @@
+1. El Core del Motor (Runtime)
+	quiero permitir flujos tanto sincronos como asícronos.
+	Lenguaje de ejecución: no tengo predilección, quiero que sea rápido y consume pococs recursos.
+	Gestión de Estado: el payload deve persistir en bbdd
+2. Capacidad de Transformación (El "Mapper")
+	Complejidad nequiero funciones de agregación, lógica condicional compleja dentro del mapeo y transformación de estructuras (arrays a objetos, etc.)
+	enguaje de expresión: JavaScript/TypeScript puro para las transformaciones
+3. Conectividad y Protocolos
+	Triggers. Webhook, Scheduler/Cron, Mensaje en una cola como RabbitMQ/Kafka, pooling de Base de Datos, modificacion/creacion de fichero en un s3/sftp/samba, servicio rest/soap
+	Paleta de Actividades: HTTP, JSON,SOAP, SFTP, SQL, gRPC, GraphQL, NoSQL, MCP, Codigo
+4. Arquitectura de Despliegue
+	Modelo: Microservicios
+	Persistencia: guardar el historial de cada ejecución auditoría completa tipo TIBCO
+5. El Factor No-Code (UX/UI)
+	Audiencia: Un desarrollador que quiere ir rápido (Low-code)
+	Extensibilidad: se añaden nuevos nodos a través de una interfaz en la propia herramienta
