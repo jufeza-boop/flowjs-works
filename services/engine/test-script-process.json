@@ -1,0 +1,56 @@
+{
+  "definition": {
+    "id": "script-test-process",
+    "version": "1.0.0",
+    "name": "Script Test Process",
+    "description": "Test the script_ts node with Goja integration",
+    "settings": {
+      "persistence": "full",
+      "timeout": 30000,
+      "error_strategy": "stop_and_rollback"
+    }
+  },
+  "trigger": {
+    "id": "trg_01",
+    "type": "http_webhook",
+    "config": {
+      "path": "/v1/script-test",
+      "method": "POST"
+    }
+  },
+  "nodes": [
+    {
+      "id": "log_trigger",
+      "type": "logger",
+      "description": "Log the trigger data",
+      "input_mapping": {
+        "message": "$.trigger"
+      },
+      "config": {
+        "level": "info"
+      }
+    },
+    {
+      "id": "transform_data",
+      "type": "script_ts",
+      "description": "Transform data using JavaScript",
+      "input_mapping": {
+        "name": "$.trigger.body.name",
+        "age": "$.trigger.body.age"
+      },
+      "script": "const output = { greeting: 'Hello, ' + input.name + '!', isAdult: input.age >= 18, processedAt: new Date().toISOString() }; output;"
+    },
+    {
+      "id": "log_script_output",
+      "type": "logger",
+      "description": "Log the output from the script",
+      "input_mapping": {
+        "message": "$.nodes.transform_data.output"
+      },
+      "config": {
+        "level": "info"
+      }
+    }
+  ],
+  "transitions": []
+}

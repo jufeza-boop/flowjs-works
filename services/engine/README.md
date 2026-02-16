@@ -36,6 +36,7 @@ services/engine/
 ### Built-in Activities
 - **Logger**: Logs messages to console with configurable levels
 - **HTTP**: Makes HTTP requests with retry support
+- **Script (script_ts)**: Executes JavaScript code for data transformations
 
 ### Error Handling
 - Robust error handling at every level
@@ -178,6 +179,45 @@ Makes HTTP requests.
 }
 ```
 
+#### Script (script_ts)
+Executes JavaScript code for data transformations using the Goja JavaScript engine.
+
+**Features:**
+- Access input data via the `input` object
+- Transform, filter, and manipulate data using JavaScript
+- Return objects, arrays, or primitive values
+- Comprehensive error handling for syntax and runtime errors
+
+**Example 1: Simple transformation**
+```json
+{
+  "id": "transform_data",
+  "type": "script_ts",
+  "description": "Transform user data",
+  "input_mapping": {
+    "name": "$.trigger.body.name",
+    "age": "$.trigger.body.age"
+  },
+  "script": "const output = { greeting: 'Hello, ' + input.name + '!', isAdult: input.age >= 18, processedAt: new Date().toISOString() }; output;"
+}
+```
+
+**Example 2: Array operations**
+```json
+{
+  "id": "filter_users",
+  "type": "script_ts",
+  "description": "Filter adult users",
+  "input_mapping": {
+    "users": "$.trigger.body.users",
+    "companyName": "$.trigger.body.company"
+  },
+  "script": "const adults = input.users.filter(u => u.age >= 18); const output = { company: input.companyName, adultCount: adults.length, adultNames: adults.map(u => u.name) }; output;"
+}
+```
+
+**Security Note:** The script runs in a sandboxed Goja environment and has no access to file system, network, or system resources.
+
 ### Input Mapping
 
 Input mapping allows you to extract data from the execution context:
@@ -198,7 +238,8 @@ The repository includes several example processes:
 
 1. **Embedded Example** (`cmd/runner/main.go`): Simple hello world process
 2. **test-process.json**: Tests context and JSONPath functionality
-3. **error-test.json**: Tests error handling and retry logic
+3. **test-script-process.json**: Demonstrates JavaScript transformation with script_ts
+4. **error-test.json**: Tests error handling and retry logic
 
 ### Running Tests
 

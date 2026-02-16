@@ -25,6 +25,7 @@ func NewActivityRegistry() *ActivityRegistry {
 	// Register built-in activities
 	registry.Register(&LoggerActivity{})
 	registry.Register(&HTTPActivity{})
+	registry.Register(&ScriptActivity{})
 	
 	return registry
 }
