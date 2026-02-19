@@ -1,0 +1,287 @@
+package engine
+
+import (
+	"encoding/json"
+	"testing"
+
+	"flowjs-works/engine/internal/models"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// newTestExecutor returns an executor with audit logging disabled (no NATS required).
+func newTestExecutor(t *testing.T) *ProcessExecutor {
+	t.Helper()
+	exec, err := NewProcessExecutor("") // empty URL → audit disabled
+	require.NoError(t, err)
+	return exec
+}
+
+// buildProcess is a test helper that creates a minimal process JSON from its parts.
+func buildProcess(id string, nodes []models.Node) []byte {
+	process := models.Process{
+		Definition: models.Definition{
+			ID:      id,
+			Version: "1.0.0",
+			Name:    id,
+		},
+		Trigger: models.Trigger{
+			ID:   "trg_01",
+			Type: "http_webhook",
+		},
+		Nodes: nodes,
+	}
+	data, _ := json.Marshal(process)
+	return data
+}
+
+// ---------------------------------------------------------------------------
+// Trigger payload propagation
+// ---------------------------------------------------------------------------
+
+// TestExecute_TriggerDataStoredInContext verifies that trigger data is stored and
+// accessible in the execution context after execution.
+func TestExecute_TriggerDataStoredInContext(t *testing.T) {
+	exec := newTestExecutor(t)
+
+	triggerData := map[string]interface{}{
+		"body": map[string]interface{}{
+			"email": "user@example.com",
+		},
+	}
+
+	process := buildProcess("p1", []models.Node{
+		{
+			ID:   "log_1",
+			Type: "logger",
+			InputMapping: map[string]interface{}{
+				"message": "$.trigger.body.email",
+			},
+			Config: map[string]interface{}{"level": "info"},
+		},
+	})
+
+	ctx, err := exec.ExecuteFromJSON(process, triggerData)
+	require.NoError(t, err)
+
+	// Trigger data must be present in the returned context
+	emailVal, err := ctx.GetValue("$.trigger.body.email")
+	require.NoError(t, err)
+	assert.Equal(t, "user@example.com", emailVal)
+}
+
+// TestExecute_NodeOutputStoredInContext verifies that after a node runs its output
+// is stored in the execution context under $.nodes.<id>.output.
+func TestExecute_NodeOutputStoredInContext(t *testing.T) {
+	exec := newTestExecutor(t)
+
+	triggerData := map[string]interface{}{
+		"body": map[string]interface{}{"name": "Alice"},
+	}
+
+	process := buildProcess("p2", []models.Node{
+		{
+			ID:   "log_name",
+			Type: "logger",
+			InputMapping: map[string]interface{}{
+				"message": "$.trigger.body.name",
+			},
+			Config: map[string]interface{}{"level": "info"},
+		},
+	})
+
+	ctx, err := exec.ExecuteFromJSON(process, triggerData)
+	require.NoError(t, err)
+
+	// Node output must contain the "logged" field set to true
+	outputVal, err := ctx.GetValue("$.nodes.log_name.output")
+	require.NoError(t, err)
+
+	outputMap, ok := outputVal.(map[string]interface{})
+	require.True(t, ok, "output should be a map")
+	assert.Equal(t, true, outputMap["logged"])
+}
+
+// TestExecute_NodeStatusStoredInContext verifies that the status "success" is
+// recorded for a node that finishes without error.
+func TestExecute_NodeStatusStoredInContext(t *testing.T) {
+	exec := newTestExecutor(t)
+
+	process := buildProcess("p3", []models.Node{
+		{
+			ID:     "log_1",
+			Type:   "logger",
+			Config: map[string]interface{}{"level": "info"},
+		},
+	})
+
+	ctx, err := exec.ExecuteFromJSON(process, map[string]interface{}{})
+	require.NoError(t, err)
+
+	statusVal, err := ctx.GetValue("$.nodes.log_1.status")
+	require.NoError(t, err)
+	assert.Equal(t, "success", statusVal)
+}
+
+// ---------------------------------------------------------------------------
+// Multi-node payload propagation (chaining)
+// ---------------------------------------------------------------------------
+
+// TestExecute_NodeOutputPropagatedToNextNode verifies that a second node can
+// reference the output of the first node via input_mapping.
+func TestExecute_NodeOutputPropagatedToNextNode(t *testing.T) {
+	exec := newTestExecutor(t)
+
+	triggerData := map[string]interface{}{
+		"body": map[string]interface{}{"greeting": "hello-world"},
+	}
+
+	process := buildProcess("p4", []models.Node{
+		{
+			ID:   "node_first",
+			Type: "logger",
+			InputMapping: map[string]interface{}{
+				"message": "$.trigger.body.greeting",
+			},
+			Config: map[string]interface{}{"level": "info"},
+		},
+		{
+			ID:   "node_second",
+			Type: "logger",
+			InputMapping: map[string]interface{}{
+				// Reference the full output object from the first node
+				"message": "$.nodes.node_first.output",
+			},
+			Config: map[string]interface{}{"level": "info"},
+		},
+	})
+
+	ctx, err := exec.ExecuteFromJSON(process, triggerData)
+	require.NoError(t, err)
+
+	// Both nodes must have status "success"
+	status1, err := ctx.GetValue("$.nodes.node_first.status")
+	require.NoError(t, err)
+	assert.Equal(t, "success", status1)
+
+	status2, err := ctx.GetValue("$.nodes.node_second.status")
+	require.NoError(t, err)
+	assert.Equal(t, "success", status2)
+
+	// The second node's output "message" field must reflect the first node's output
+	output2, err := ctx.GetValue("$.nodes.node_second.output")
+	require.NoError(t, err)
+	output2Map, ok := output2.(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, true, output2Map["logged"])
+}
+
+// TestExecute_ScriptNodeTransformsPropagated verifies that a script node can
+// transform trigger data and subsequent nodes can consume the result.
+func TestExecute_ScriptNodeTransformsPropagated(t *testing.T) {
+	exec := newTestExecutor(t)
+
+	triggerData := map[string]interface{}{
+		"body": map[string]interface{}{
+			"name": "Bob",
+			"age":  float64(25),
+		},
+	}
+
+	process := buildProcess("p5", []models.Node{
+		{
+			ID:   "transform",
+			Type: "script_ts",
+			InputMapping: map[string]interface{}{
+				"name": "$.trigger.body.name",
+				"age":  "$.trigger.body.age",
+			},
+			Script: `(function() { return { greeting: "Hello, " + input.name + "!", isAdult: input.age >= 18 }; })()`,
+		},
+		{
+			ID:   "log_result",
+			Type: "logger",
+			InputMapping: map[string]interface{}{
+				"message": "$.nodes.transform.output",
+			},
+			Config: map[string]interface{}{"level": "info"},
+		},
+	})
+
+	ctx, err := exec.ExecuteFromJSON(process, triggerData)
+	require.NoError(t, err)
+
+	// Script output must be stored in context
+	scriptOutput, err := ctx.GetValue("$.nodes.transform.output")
+	require.NoError(t, err)
+	scriptOutputMap, ok := scriptOutput.(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "Hello, Bob!", scriptOutputMap["greeting"])
+	assert.Equal(t, true, scriptOutputMap["isAdult"])
+
+	// Logger node must have run successfully using the script output
+	logStatus, err := ctx.GetValue("$.nodes.log_result.status")
+	require.NoError(t, err)
+	assert.Equal(t, "success", logStatus)
+}
+
+// ---------------------------------------------------------------------------
+// Error / edge cases
+// ---------------------------------------------------------------------------
+
+// TestExecute_MalformedJSON verifies that malformed JSON input returns an error.
+func TestExecute_MalformedJSON(t *testing.T) {
+	exec := newTestExecutor(t)
+
+	_, err := exec.ExecuteFromJSON([]byte(`{ this is not valid json`), map[string]interface{}{})
+	assert.Error(t, err)
+}
+
+// TestExecute_UnknownActivityType verifies that referencing an unknown node type
+// causes the execution to fail with a descriptive error.
+func TestExecute_UnknownActivityType(t *testing.T) {
+	exec := newTestExecutor(t)
+
+	process := buildProcess("p6", []models.Node{
+		{ID: "bad_node", Type: "nonexistent_activity"},
+	})
+
+	ctx, err := exec.ExecuteFromJSON(process, map[string]interface{}{})
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "nonexistent_activity")
+	// Context is still returned with the error status
+	require.NotNil(t, ctx)
+	assert.Equal(t, "error", ctx.Nodes["bad_node"]["status"])
+}
+
+// TestExecute_InputMappingReferencesNonExistentNode verifies that referencing a node
+// that has not yet produced output causes the execution to fail clearly.
+func TestExecute_InputMappingReferencesNonExistentNode(t *testing.T) {
+	exec := newTestExecutor(t)
+
+	process := buildProcess("p7", []models.Node{
+		{
+			ID:   "node_a",
+			Type: "logger",
+			InputMapping: map[string]interface{}{
+				// References a node that does not exist
+				"message": "$.nodes.ghost_node.output",
+			},
+		},
+	})
+
+	_, err := exec.ExecuteFromJSON(process, map[string]interface{}{})
+	assert.Error(t, err)
+}
+
+// TestExecute_EmptyNodeList verifies that a process with no nodes completes without error.
+func TestExecute_EmptyNodeList(t *testing.T) {
+	exec := newTestExecutor(t)
+
+	process := buildProcess("p8", []models.Node{})
+
+	ctx, err := exec.ExecuteFromJSON(process, map[string]interface{}{"event": "ping"})
+	require.NoError(t, err)
+	require.NotNil(t, ctx)
+}
