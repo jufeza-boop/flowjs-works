@@ -4,6 +4,7 @@
 package batcher
 
 import (
+	"log"
 	"sync"
 	"time"
 )
@@ -111,5 +112,7 @@ func (b *Batcher) flush() {
 	b.buf = make([]AuditEvent, 0, b.maxBatchSize)
 	b.mu.Unlock()
 
-	_ = b.flushFn(batch)
+	if err := b.flushFn(batch); err != nil {
+		log.Printf("batcher: flush failed for %d events: %v", len(batch), err)
+	}
 }

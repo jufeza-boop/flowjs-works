@@ -68,7 +68,7 @@ function JsonViewer({ value, depth = 0 }: JsonViewerProps) {
 // ---------------------------------------------------------------------------
 
 function StatusBadge({ status }: { status: string }) {
-  const colour =
+  const color =
     status === 'COMPLETED' || status === 'SUCCESS'
       ? 'bg-green-100 text-green-700'
       : status === 'FAILED' || status === 'ERROR'
@@ -77,7 +77,7 @@ function StatusBadge({ status }: { status: string }) {
           ? 'bg-blue-100 text-blue-700'
           : 'bg-gray-100 text-gray-600'
   return (
-    <span className={`px-2 py-0.5 rounded text-xs font-medium ${colour}`}>{status || '—'}</span>
+    <span className={`px-2 py-0.5 rounded text-xs font-medium ${color}`}>{status || '—'}</span>
   )
 }
 
