@@ -24,6 +24,23 @@ services:
       - "4222:4222" # Client port
       - "8222:8222" # HTTP Monitoring port
 
+  # Audit Logger: consumes NATS audit.logs and persists to PostgreSQL
+  audit-logger:
+    build:
+      context: ./services/audit-logger
+      dockerfile: Dockerfile
+    container_name: flowjs-audit-logger
+    restart: always
+    environment:
+      - NATS_URL=nats://nats:4222
+      - POSTGRES_DSN=host=postgres port=5432 user=admin password=flowjs_pass dbname=flowjs_audit sslmode=disable
+      - HTTP_ADDR=:8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - nats
+
   # UI de gestión de base de datos (Opcional, muy útil para debug)
   pgadmin:
     image: dpage/pgadmin4
