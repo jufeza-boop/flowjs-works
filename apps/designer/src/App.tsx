@@ -4,6 +4,7 @@ import { NodePalette } from './components/NodePalette'
 import { DesignerCanvas } from './components/DesignerCanvas'
 import { ConfigPanel } from './components/ConfigPanel'
 import { ExportButton } from './components/ExportButton'
+import { ExecutionHistory } from './components/ExecutionHistory'
 import type { NodeData, DesignerNode } from './types/designer'
 import type { FlowDefinition } from './types/dsl'
 
@@ -19,8 +20,11 @@ const DEFAULT_DEFINITION: FlowDefinition = {
   },
 }
 
-/** Root application — three-column layout: Palette | Canvas | Config */
+type View = 'designer' | 'history'
+
+/** Root application — three-column designer layout or execution history view */
 export default function App() {
+  const [view, setView] = useState<View>('designer')
   const [selectedNode, setSelectedNode] = useState<DesignerNode | null>(null)
   const [nodes, setNodes] = useState<Node<NodeData>[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
@@ -46,25 +50,55 @@ export default function App() {
         <div className="flex items-center gap-3">
           <span className="text-xl font-bold text-blue-600">flowjs</span>
           <span className="text-gray-300">|</span>
-          <span className="text-sm text-gray-500">Process Designer</span>
+          {/* View switcher */}
+          <nav className="flex gap-1">
+            <button
+              onClick={() => setView('designer')}
+              className={`text-sm px-3 py-1 rounded transition-colors ${
+                view === 'designer'
+                  ? 'bg-blue-50 text-blue-600 font-medium'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Process Designer
+            </button>
+            <button
+              onClick={() => setView('history')}
+              className={`text-sm px-3 py-1 rounded transition-colors ${
+                view === 'history'
+                  ? 'bg-blue-50 text-blue-600 font-medium'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Execution History
+            </button>
+          </nav>
         </div>
-        <ExportButton nodes={nodes} edges={edges} definition={DEFAULT_DEFINITION} />
+        {view === 'designer' && (
+          <ExportButton nodes={nodes} edges={edges} definition={DEFAULT_DEFINITION} />
+        )}
       </header>
 
-      {/* Three-column body */}
+      {/* Main content */}
       <main className="flex flex-1 overflow-hidden">
-        {/* Left: Node Palette */}
-        <NodePalette />
+        {view === 'designer' ? (
+          <>
+            {/* Left: Node Palette */}
+            <NodePalette />
 
-        {/* Center: React Flow Canvas */}
-        <DesignerCanvas
-          onSelectionChange={setSelectedNode}
-          onNodesChange={setNodes}
-          onEdgesChange={setEdges}
-        />
+            {/* Center: React Flow Canvas */}
+            <DesignerCanvas
+              onSelectionChange={setSelectedNode}
+              onNodesChange={setNodes}
+              onEdgesChange={setEdges}
+            />
 
-        {/* Right: Config Panel */}
-        <ConfigPanel selectedNode={selectedNode} onNodeUpdate={handleNodeUpdate} />
+            {/* Right: Config Panel */}
+            <ConfigPanel selectedNode={selectedNode} onNodeUpdate={handleNodeUpdate} />
+          </>
+        ) : (
+          <ExecutionHistory />
+        )}
       </main>
     </div>
   )
