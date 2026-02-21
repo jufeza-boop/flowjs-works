@@ -94,7 +94,7 @@ export default function App() {
             />
 
             {/* Right: Config Panel */}
-            <ConfigPanel selectedNode={selectedNode} onNodeUpdate={handleNodeUpdate} />
+            <ConfigPanel selectedNode={selectedNode} onNodeUpdate={handleNodeUpdate} allNodes={nodes as DesignerNode[]} />
           </>
         ) : (
           <ExecutionHistory />
