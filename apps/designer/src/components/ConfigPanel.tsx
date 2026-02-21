@@ -145,6 +145,7 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
                 <button
                   onClick={() => setShowMonaco(true)}
                   className="text-[10px] px-2 py-0.5 bg-gray-700 text-white rounded hover:bg-gray-900 transition-colors"
+                  aria-label="Open script in Monaco editor"
                   title="Open in Monaco editor"
                 >
                   ⎆ Editor
@@ -168,6 +169,7 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
                 <button
                   onClick={() => setShowMapper(true)}
                   className="text-[10px] px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                  aria-label="Open visual data mapper"
                   title="Open visual data mapper"
                 >
                   ⇄ Visual Mapper

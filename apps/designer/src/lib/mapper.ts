@@ -4,7 +4,9 @@ import type { DesignerNode } from '../types/designer'
 
 /**
  * Converts an array of visual mapping connections into the DSL `input_mapping` object.
- * Each connection maps a target key to either a plain JSONPath or a script expression.
+ * Each connection maps a target key to the source JSONPath.
+ * Note: `transformScript` on a connection is not persisted here — it is stored
+ * separately in the node's `script` property via the MonacoModal editor.
  */
 export function buildInputMapping(connections: MappingConnection[]): InputMapping {
   return connections.reduce<InputMapping>((acc, conn) => {
