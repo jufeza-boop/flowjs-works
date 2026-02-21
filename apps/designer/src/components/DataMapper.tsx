@@ -7,13 +7,17 @@ interface FieldNodeProps {
   field: SchemaField
   depth: number
   onSelect: (field: SchemaField) => void
-  isSelected: boolean
+  /** Path of the currently-selected (pending) source field — checked at every depth level */
+  selectedPath: string | null
+  /** Callback to register DOM refs for SVG connection-line positioning */
+  onRef?: (path: string, el: HTMLDivElement | null) => void
 }
 
 /** Renders a single field row in the source or target tree */
-function FieldNode({ field, depth, onSelect, isSelected }: FieldNodeProps) {
+function FieldNode({ field, depth, onSelect, selectedPath, onRef }: FieldNodeProps) {
   const [expanded, setExpanded] = useState(depth === 0)
   const hasChildren = field.children && field.children.length > 0
+  const isSelected = selectedPath === field.path
 
   const typeColor: Record<SchemaField['type'], string> = {
     string: 'text-green-600',
@@ -25,7 +29,7 @@ function FieldNode({ field, depth, onSelect, isSelected }: FieldNodeProps) {
   }
 
   return (
-    <div>
+    <div ref={(el) => onRef?.(field.path, el)}>
       <div
         className={`flex items-center gap-1 px-2 py-0.5 rounded cursor-pointer text-xs hover:bg-gray-100 ${
           isSelected ? 'bg-blue-50 ring-1 ring-blue-400' : ''
@@ -52,7 +56,8 @@ function FieldNode({ field, depth, onSelect, isSelected }: FieldNodeProps) {
           field={child}
           depth={depth + 1}
           onSelect={onSelect}
-          isSelected={isSelected && false /* parent selected, not child */}
+          selectedPath={selectedPath}
+          onRef={onRef}
         />
       ))}
     </div>
@@ -145,6 +150,11 @@ export function DataMapper({ sourceFields, targetKeys, currentMapping, onSave, o
     setConnections((prev) => prev.filter((c) => c.targetKey !== targetKey))
   }, [])
 
+  const handleSourceRef = useCallback((path: string, el: HTMLDivElement | null) => {
+    if (el) sourceRowRefs.current.set(path, el)
+    else sourceRowRefs.current.delete(path)
+  }, [])
+
   const handleAddTargetKey = () => {
     const key = newTargetKey.trim()
     if (!key) return
@@ -220,17 +230,14 @@ export function DataMapper({ sourceFields, targetKeys, currentMapping, onSave, o
             <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Source</span>
           </div>
           {sourceFields.map((field) => (
-            <div
+            <FieldNode
               key={field.path}
-              ref={(el) => { if (el) sourceRowRefs.current.set(field.path, el) }}
-            >
-              <FieldNode
-                field={field}
-                depth={0}
-                onSelect={handleSourceSelect}
-                isSelected={pendingSource?.path === field.path}
-              />
-            </div>
+              field={field}
+              depth={0}
+              onSelect={handleSourceSelect}
+              selectedPath={pendingSource?.path ?? null}
+              onRef={handleSourceRef}
+            />
           ))}
         </div>
 
