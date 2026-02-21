@@ -1,0 +1,49 @@
+{
+  "definition": {
+    "id": "catfact-get-process",
+    "version": "1.0.0",
+    "name": "CatFact GET Process",
+    "description": "Integration flow that performs a GET request to catfact.ninja",
+    "settings": {
+      "persistence": "full",
+      "timeout": 30000,
+      "error_strategy": "stop_and_rollback"
+    }
+  },
+  "trigger": {
+    "id": "trg_01",
+    "type": "http_webhook",
+    "config": {
+      "path": "/v1/catfact",
+      "method": "GET"
+    }
+  },
+  "nodes": [
+    {
+      "id": "get_cat_fact",
+      "type": "http",
+      "description": "GET cat fact from public API",
+      "config": {
+        "url": "https://catfact.ninja/fact",
+        "method": "GET",
+        "timeout": 30,
+        "headers": {
+          "authority": "catfact.ninja",
+          "accept": "application/json",
+          "accept-language": "es-ES,es;q=0.9,en;q=0.8",
+          "cookie": "XSRF-TOKEN=eyJpdiI6IjNzY2ZWblZmamJhbmhjSHhDUVdlNlE9PSIsInZhbHVlIjoiVnRsMW4wd240cDZHcmd2MW9La0pGOSt5RnVHbzhqU2lXb3lKWVNNOGRjOEdQNWhCOUgvcXlma0YvQVJleFlZbGNpTTJIVnBGWGNxZ2RnVDdkYWtSM2lCOENNeEdrY3NxaFl4dVExRVo5RmJ1VXdjQTFteEhuQ0czSkY0UXEzbU0iLCJtYWMiOiIxOTkzMDQxYjBkMjY3YzgxZWVkM2RjOTc2MGZmNTY2Y2YxMzFhOWFhMmVjYmRiZTkyY2MyMzhmM2QyMDgxYzhiIiwidGFnIjoiIn0%3D; catfacts_session=eyJpdiI6Ii91R3JVR0NmTTdCUS9UMngxNnBmcmc9PSIsInZhbHVlIjoienY0T1E1R21tT3pJVnB3aWFLbjRYLzQvUm9YN2s3MlY0TitLL3BHZVpjQjhwVjEzUUNOZ3lDUzZXd3dTSE1HM3Y3NERiR3hXZ2tBUWhDZVpSMkc4L1k3VHdRVUpXODNaS1M3TFZmQzlnYjY5RS9xK0hTbmtCaXQzVlU2bXN5dU4iLCJtYWMiOiJjNTQ0NDc5ODQ5NGQ4ODkyYzA5ZmU0ZThkYzE4MmViOWExNmZkY2QxZjU3YTU5NWE5YjlkYTE3MDBmN2JkNzM2IiwidGFnIjoiIn0%3D; hvtwkhQSPXJBfXLqL9nHgxtg2wgADR9gJ68Hy4Ww=eyJpdiI6IlBOSGVZSE4xWDNycVpiKytub1JUVUE9PSIsInZhbHVlIjoiUWs3WWkwMGl4SVRLb0drOElVeHlJUjN6azQwSUtydU1RajNuNldDTEFlMThXZUFKZDJGbXg0eHFGSmVQR1FibTRRQSt4blpBdkVKVkUrRmgwdWdXMVdqbHowcFlKamt3TERZU2pibmhyZkFpRkVYNXRmMWlMTUVwa2FVSTlxQ1dOT0t4RGJKeS9IM1pNUDlIT3k1ZVFZSWdtYVliQmVXRlpmYUNNcWlWelJ5MGNpdk1zTHY1cG5oNkt0cHVzd3lMcks5NmpWTzVCYTVPeXNTOXM2dHllclYvdmxodDVoemEzL0xIYW16K2NDWkd3QkM1b01ZRlVMUE53SmhPSWR2N2lSUEx1UnZpeTNEL2FjSE56SWg2V25ScVRtWWRkMC9uckhzMEFOekJtTmdzKzJBOFNzT0xpNjRCTUxabmJlZFdMVzNPcE04TVBobHViSThxU2hNc0lIdkZHRVRCUVRRYXJ3RHFBblpwNXJjVExBMGEzTjFiWG4yYXlidTUwK2pLIiwibWFjIjoiNTdkNDJjZTkyNjJkYjQ0YmIxM2M5N2ZhNTZkNTU5MDQ3NWZkZDMzOTBlM2FhMTdlYmY1OTFjMDc1YWM3ZTYxNyIsInRhZyI6IiJ9",
+          "referer": "https://catfact.ninja/",
+          "sec-ch-ua": "\"Chromium\";v=\"122\", \"Not(A:Brand\";v=\"24\", \"Google Chrome\";v=\"122\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Windows\"",
+          "sec-fetch-dest": "empty",
+          "sec-fetch-mode": "cors",
+          "sec-fetch-site": "same-origin",
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+          "x-csrf-token": "BnfqU78kXNtpirMm0GXsgmrGHrA8jOwOIgslpCDX"
+        }
+      }
+    }
+  ],
+  "transitions": []
+}

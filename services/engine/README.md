@@ -240,6 +240,7 @@ The repository includes several example processes:
 2. **test-process.json**: Tests context and JSONPath functionality
 3. **test-script-process.json**: Demonstrates JavaScript transformation with script_ts
 4. **error-test.json**: Tests error handling and retry logic
+5. **test-catfact-process.json**: External GET integration flow against catfact.ninja
 
 ### Running Tests
 
@@ -255,6 +256,9 @@ docker compose up -d nats
 
 # Test error handling
 ./bin/runner -process=error-test.json
+
+# Test external catfact GET flow
+./bin/runner -process=test-catfact-process.json -trigger=test-catfact-trigger.json
 ```
 
 ## Development

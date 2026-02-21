@@ -2,6 +2,8 @@ package engine
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"flowjs-works/engine/internal/models"
@@ -284,4 +286,45 @@ func TestExecute_EmptyNodeList(t *testing.T) {
 	ctx, err := exec.ExecuteFromJSON(process, map[string]interface{}{"event": "ping"})
 	require.NoError(t, err)
 	require.NotNil(t, ctx)
+}
+
+// TestExecute_CatFactGETFlow validates an end-to-end HTTP GET flow against the
+// public catfact API. This is an external integration test and is skipped by
+// default unless FLOWJS_RUN_EXTERNAL_TESTS=1.
+func TestExecute_CatFactGETFlow(t *testing.T) {
+	if os.Getenv("FLOWJS_RUN_EXTERNAL_TESTS") != "1" {
+		t.Skip("skipping external test; set FLOWJS_RUN_EXTERNAL_TESTS=1 to enable")
+	}
+
+	exec := newTestExecutor(t)
+
+	processPath := filepath.Join("..", "..", "test-catfact-process.json")
+	triggerPath := filepath.Join("..", "..", "test-catfact-trigger.json")
+
+	processJSON, err := os.ReadFile(processPath)
+	require.NoError(t, err)
+
+	triggerJSON, err := os.ReadFile(triggerPath)
+	require.NoError(t, err)
+
+	triggerData := make(map[string]interface{})
+	err = json.Unmarshal(triggerJSON, &triggerData)
+	require.NoError(t, err)
+
+	ctx, err := exec.ExecuteFromJSON(processJSON, triggerData)
+	require.NoError(t, err)
+
+	statusVal, err := ctx.GetValue("$.nodes.get_cat_fact.status")
+	require.NoError(t, err)
+	assert.Equal(t, "success", statusVal)
+
+	bodyVal, err := ctx.GetValue("$.nodes.get_cat_fact.output.body")
+	require.NoError(t, err)
+
+	bodyMap, ok := bodyVal.(map[string]interface{})
+	require.True(t, ok, "response body should be a map")
+
+	fact, ok := bodyMap["fact"].(string)
+	require.True(t, ok, "response body should include fact as string")
+	assert.NotEmpty(t, fact)
 }
