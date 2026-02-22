@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fetchExecutions, fetchActivityLogs } from './api'
+import { fetchExecutions, fetchActivityLogs, runFlow } from './api'
 import type { Execution, ActivityLog } from '../types/audit'
 
 describe('fetchExecutions', () => {
@@ -109,5 +109,62 @@ describe('fetchActivityLogs', () => {
 
     await fetchActivityLogs('exec id with spaces')
     expect(capturedUrl).toContain('exec%20id%20with%20spaces')
+  })
+})
+
+describe('runFlow', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('returns execution result on success', async () => {
+    const mockResponse = {
+      execution_id: 'exec-abc-123',
+      nodes: {
+        log_1: { status: 'success', output: { logged: true } },
+      },
+    }
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(mockResponse),
+      }),
+    )
+
+    const result = await runFlow({
+      dsl: {
+        definition: { id: 'test', version: '1.0.0', name: 'Test', description: '', settings: { persistence: 'full', timeout: 30000, error_strategy: 'stop_and_rollback' } },
+        trigger: { id: 'trg_01', type: 'http_webhook', config: {} },
+        nodes: [],
+        transitions: [],
+      },
+    })
+
+    expect(result.execution_id).toBe('exec-abc-123')
+    expect(result.nodes['log_1'].status).toBe('success')
+  })
+
+  it('throws an error when the response is not ok', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 422,
+        json: () => Promise.resolve({ error: 'node failed', execution_id: '', nodes: {} }),
+      }),
+    )
+
+    await expect(
+      runFlow({
+        dsl: {
+          definition: { id: 'test', version: '1.0.0', name: 'Test', description: '', settings: { persistence: 'full', timeout: 30000, error_strategy: 'stop_and_rollback' } },
+          trigger: { id: 'trg_01', type: 'http_webhook', config: {} },
+          nodes: [],
+          transitions: [],
+        },
+      }),
+    ).rejects.toThrow('Run flow failed (422)')
   })
 })
