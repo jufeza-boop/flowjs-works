@@ -41,6 +41,21 @@ services:
       - postgres
       - nats
 
+  # Engine HTTP Server: executes DSL flows sent from the Designer UI
+  engine:
+    build:
+      context: ./services/engine
+      dockerfile: Dockerfile
+    container_name: flowjs-engine
+    restart: always
+    environment:
+      - NATS_URL=nats://nats:4222
+      - HTTP_ADDR=:9090
+    ports:
+      - "9090:9090"
+    depends_on:
+      - nats
+
   # UI de gestión de base de datos (Opcional, muy útil para debug)
   pgadmin:
     image: dpage/pgadmin4
