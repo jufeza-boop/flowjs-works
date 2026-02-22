@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import type { Node, Edge } from '@xyflow/react'
+import { ReactFlowProvider } from '@xyflow/react'
 import { NodePalette } from './components/NodePalette'
 import { DesignerCanvas } from './components/DesignerCanvas'
 import { ConfigPanel } from './components/ConfigPanel'
@@ -82,8 +83,8 @@ export default function App() {
             <button
               onClick={() => setView('designer')}
               className={`text-sm px-3 py-1 rounded transition-colors ${view === 'designer'
-                  ? 'bg-blue-50 text-blue-600 font-medium'
-                  : 'text-gray-500 hover:text-gray-700'
+                ? 'bg-blue-50 text-blue-600 font-medium'
+                : 'text-gray-500 hover:text-gray-700'
                 }`}
             >
               Process Designer
@@ -91,8 +92,8 @@ export default function App() {
             <button
               onClick={() => setView('history')}
               className={`text-sm px-3 py-1 rounded transition-colors ${view === 'history'
-                  ? 'bg-blue-50 text-blue-600 font-medium'
-                  : 'text-gray-500 hover:text-gray-700'
+                ? 'bg-blue-50 text-blue-600 font-medium'
+                : 'text-gray-500 hover:text-gray-700'
                 }`}
             >
               Execution History
@@ -118,18 +119,20 @@ export default function App() {
       <main className="flex flex-1 overflow-hidden">
         {view === 'designer' ? (
           <>
-            {/* Left: Node Palette */}
-            <NodePalette />
+            <ReactFlowProvider>
+              {/* Left: Node Palette */}
+              <NodePalette />
 
-            {/* Center: React Flow Canvas */}
-            <DesignerCanvas
-              onSelectionChange={setSelectedNode}
-              onNodesChange={setNodes}
-              onEdgesChange={setEdges}
-            />
+              {/* Center: React Flow Canvas */}
+              <DesignerCanvas
+                onSelectionChange={setSelectedNode}
+                onNodesChange={setNodes}
+                onEdgesChange={setEdges}
+              />
 
-            {/* Right: Config Panel */}
-            <ConfigPanel selectedNode={selectedNode} onNodeUpdate={handleNodeUpdate} allNodes={nodes as DesignerNode[]} />
+              {/* Right: Config Panel */}
+              <ConfigPanel selectedNode={selectedNode} onNodeUpdate={handleNodeUpdate} allNodes={nodes as DesignerNode[]} />
+            </ReactFlowProvider>
           </>
         ) : (
           <ExecutionHistory />

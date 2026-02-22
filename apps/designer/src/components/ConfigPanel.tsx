@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useReactFlow } from '@xyflow/react'
 import type { DesignerNode } from '../types/designer'
 import type { SchemaField } from '../types/mapper'
 import type { InputMapping, HttpRequestConfig } from '../types/dsl'
@@ -16,6 +17,7 @@ interface ConfigPanelProps {
 
 /** Right panel showing configuration for the selected node */
 export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: ConfigPanelProps) {
+  const { setNodes } = useReactFlow()
   const [showMapper, setShowMapper] = useState(false)
   const [showMonaco, setShowMonaco] = useState(false)
   const [liveTestInput, setLiveTestInput] = useState('{\n  "body": {}\n}')
@@ -26,21 +28,68 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
   const uidCounterRef = useRef(0)
   const nextUid = () => ++uidCounterRef.current
 
+  // CARGA DE DATOS AL SELECCIONAR
   useEffect(() => {
     if (selectedNode?.data.nodeKind === 'process' && selectedNode.data.type === 'http_request') {
-      const config = selectedNode.data.config as HttpRequestConfig | undefined
+      const config = (selectedNode.data.config as HttpRequestConfig) || {}
+
+      // Initialize if empty but without overwriting existing data directly in the component state mapping
       setHeaderRows(
-        Object.entries(config?.headers ?? {}).map(([key, value]) => ({
+        Object.entries(config.headers || {}).map(([key, value]) => ({
           uid: nextUid(),
           key,
           value,
-        })),
+        }))
       )
     } else {
       setHeaderRows([])
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedNode?.id])
+
+  // Manejador centralizado para propiedades generales (id, description, script, etc)
+  const updateNodeDataCentralized = useCallback((updates: Partial<DesignerNode['data']>) => {
+    if (!selectedNode) return
+    const selectedNodeId = selectedNode.id
+
+    // 1. Actualización inmutable en React Flow
+    setNodes((nds) => nds.map((node) =>
+      node.id === selectedNodeId
+        ? { ...node, data: { ...node.data, ...updates } }
+        : node
+    ))
+
+    // 2. Notificamos al App.tsx para que selectedNode también se actualice
+    onNodeUpdate(selectedNodeId, updates)
+  }, [selectedNode, setNodes, onNodeUpdate])
+
+  // Manejador centralizado específicamente para la "configuracion"
+  const updateNodeConfigCentralized = useCallback((updatedConfig: any) => {
+    if (!selectedNode) return
+    const selectedNodeId = selectedNode.id
+
+    // 1. Actualización inmutable directo en React Flow como pedido
+    setNodes((nds) => nds.map((node) =>
+      node.id === selectedNodeId
+        ? { ...node, data: { ...node.data, config: updatedConfig } }
+        : node
+    ))
+
+    // 2. Notificamos al App.tsx
+    onNodeUpdate(selectedNodeId, { ...selectedNode.data, config: updatedConfig })
+  }, [selectedNode, setNodes, onNodeUpdate])
+
+  // Use a debounce or local state for fast typing on headers
+  const syncHeaders = useCallback((rows: Array<{ key: string; value: string }>) => {
+    if (!selectedNode || selectedNode.data.nodeKind !== 'process') return
+    const headers = rows.reduce<Record<string, string>>((acc, row) => {
+      if (row.key) acc[row.key] = row.value
+      return acc
+    }, {})
+
+    const currentConfig = (selectedNode.data.config as HttpRequestConfig) || {}
+    const updatedConfig = { ...currentConfig, headers }
+    updateNodeConfigCentralized(updatedConfig)
+  }, [selectedNode, updateNodeConfigCentralized])
 
   if (!selectedNode) {
     return (
@@ -62,33 +111,32 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
   const data = selectedNode.data
 
   const handleIdChange = (value: string) => {
-    onNodeUpdate(selectedNode.id, { ...data, id: value })
+    updateNodeDataCentralized({ id: value })
   }
 
   const handleDescriptionChange = (value: string) => {
     if (data.nodeKind === 'process') {
-      onNodeUpdate(selectedNode.id, { ...data, description: value })
+      updateNodeDataCentralized({ description: value })
     }
   }
 
   const handleScriptChange = (value: string) => {
     if (data.nodeKind === 'process' && data.type === 'script_ts') {
-      onNodeUpdate(selectedNode.id, { ...data, script: value })
+      updateNodeDataCentralized({ script: value })
     }
   }
 
   const handleInputMappingChange = (key: string, value: string) => {
     if (data.nodeKind === 'process') {
-      onNodeUpdate(selectedNode.id, {
-        ...data,
-        input_mapping: { ...(data.input_mapping ?? {}), [key]: value },
+      updateNodeDataCentralized({
+        input_mapping: { ...(data.input_mapping || {}), [key]: value },
       })
     }
   }
 
   const handleMapperSave = (mapping: InputMapping) => {
     if (data.nodeKind === 'process') {
-      onNodeUpdate(selectedNode.id, { ...data, input_mapping: mapping })
+      updateNodeDataCentralized({ input_mapping: mapping })
     }
     setShowMapper(false)
   }
@@ -100,28 +148,27 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
 
   const handleHttpConfigChange = (field: keyof HttpRequestConfig, value: string | number) => {
     if (data.nodeKind !== 'process') return
-    const currentConfig = (data.config as HttpRequestConfig) ?? {}
-    onNodeUpdate(selectedNode.id, { ...data, config: { ...currentConfig, [field]: value } })
-  }
-
-  const syncHeaders = (rows: Array<{ key: string; value: string }>) => {
-    if (data.nodeKind !== 'process') return
-    const headers = rows.reduce<Record<string, string>>((acc, row) => {
-      if (row.key) acc[row.key] = row.value
-      return acc
-    }, {})
-    const currentConfig = (data.config as HttpRequestConfig) ?? {}
-    onNodeUpdate(selectedNode.id, { ...data, config: { ...currentConfig, headers } })
+    const currentConfig = (data.config as HttpRequestConfig) || {}
+    const updatedConfig = { ...currentConfig, [field]: value }
+    updateNodeConfigCentralized(updatedConfig)
   }
 
   const handleHeaderChange = (uid: number, field: 'key' | 'value', val: string) => {
     const newRows = headerRows.map((row) => (row.uid === uid ? { ...row, [field]: val } : row))
-    setHeaderRows(newRows)
-    syncHeaders(newRows)
+    setHeaderRows(newRows) // update local immediately to prevent typing stutter
+
+    // Let's debounce the React Flow global sync to avoid infinite re-renders or cursor jumps
+    const timeoutId = setTimeout(() => {
+      syncHeaders(newRows)
+    }, 300)
+
+    return () => clearTimeout(timeoutId)
   }
 
   const handleAddHeader = () => {
-    setHeaderRows([...headerRows, { uid: nextUid(), key: '', value: '' }])
+    const newRows = [...headerRows, { uid: nextUid(), key: '', value: '' }]
+    setHeaderRows(newRows)
+    syncHeaders(newRows)
   }
 
   const handleRemoveHeader = (uid: number) => {
@@ -138,8 +185,8 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
     try {
       const parsedInput = JSON.parse(liveTestInput) as Record<string, unknown>
       const result = await liveTest({
-        input_mapping: data.input_mapping ?? {},
-        script: data.type === 'script_ts' ? (data.script ?? '') : undefined,
+        input_mapping: data.input_mapping || {},
+        script: data.type === 'script_ts' ? (data.script || '') : undefined,
         input_payload: parsedInput,
       })
       setLiveTestResult(JSON.stringify(result.output, null, 2))
@@ -152,7 +199,7 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
 
   // Build source fields for the mapper
   const sourceFields: SchemaField[] = buildSourceFields(allNodes, selectedNode.id)
-  const targetKeys = data.nodeKind === 'process' ? Object.keys(data.input_mapping ?? {}) : []
+  const targetKeys = data.nodeKind === 'process' ? Object.keys(data.input_mapping || {}) : []
 
   return (
     <>
@@ -169,7 +216,7 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
             <label className="block text-xs font-medium text-gray-600 mb-1">Node ID</label>
             <input
               type="text"
-              value={data.id}
+              value={data.id || ''}
               onChange={(e) => handleIdChange(e.target.value)}
               className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
             />
@@ -181,7 +228,7 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
               <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
               <input
                 type="text"
-                value={data.description ?? ''}
+                value={data.description || ''}
                 onChange={(e) => handleDescriptionChange(e.target.value)}
                 className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
               />
@@ -203,7 +250,7 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
                 </button>
               </div>
               <textarea
-                value={data.script ?? ''}
+                value={data.script || ''}
                 onChange={(e) => handleScriptChange(e.target.value)}
                 rows={6}
                 className="w-full text-xs font-mono border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
@@ -224,7 +271,7 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
                 <label className="block text-xs font-medium text-gray-600 mb-1">URL</label>
                 <input
                   type="text"
-                  value={(data.config as HttpRequestConfig)?.url ?? ''}
+                  value={(data.config as HttpRequestConfig)?.url || ''}
                   onChange={(e) => handleHttpConfigChange('url', e.target.value)}
                   className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
                   placeholder="https://api.example.com"
@@ -235,7 +282,7 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Method</label>
                 <select
-                  value={(data.config as HttpRequestConfig)?.method ?? 'GET'}
+                  value={(data.config as HttpRequestConfig)?.method || 'GET'}
                   onChange={(e) => handleHttpConfigChange('method', e.target.value)}
                   className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
                 >
@@ -400,7 +447,7 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
             <DataMapper
               sourceFields={sourceFields}
               targetKeys={targetKeys}
-              currentMapping={data.nodeKind === 'process' ? (data.input_mapping ?? {}) : {}}
+              currentMapping={data.nodeKind === 'process' ? (data.input_mapping || {}) : {}}
               onSave={handleMapperSave}
               onClose={() => setShowMapper(false)}
             />
@@ -411,7 +458,7 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
       {/* Monaco Editor modal (script_ts nodes) */}
       {showMonaco && data.nodeKind === 'process' && data.type === 'script_ts' && (
         <MonacoModal
-          value={data.script ?? ''}
+          value={data.script || ''}
           onSave={handleMonacoSave}
           onClose={() => setShowMonaco(false)}
         />
@@ -419,4 +466,3 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
     </>
   )
 }
-
