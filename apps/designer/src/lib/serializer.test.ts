@@ -142,4 +142,36 @@ describe('serializeGraph', () => {
       ts: '$.trigger.headers.date',
     })
   })
+
+  it('serializes http_request node config with url, method, timeout and headers', () => {
+    const nodes: Node<NodeData>[] = [
+      {
+        id: 'http_01',
+        type: 'httpRequestNode',
+        position: { x: 0, y: 0 },
+        data: {
+          nodeKind: 'process',
+          id: 'http_01',
+          type: 'http_request',
+          description: 'Fetch cat fact',
+          config: {
+            url: 'https://catfact.ninja/fact',
+            method: 'GET',
+            timeout: 30,
+            headers: { Accept: 'application/json' },
+          },
+        },
+      },
+    ]
+    const dsl = serializeGraph(nodes, [], testDefinition)
+    expect(dsl.nodes).toHaveLength(1)
+    const httpNode = dsl.nodes[0]
+    expect(httpNode.type).toBe('http_request')
+    expect(httpNode.config).toEqual({
+      url: 'https://catfact.ninja/fact',
+      method: 'GET',
+      timeout: 30,
+      headers: { Accept: 'application/json' },
+    })
+  })
 })

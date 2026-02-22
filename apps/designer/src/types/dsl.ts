@@ -39,6 +39,14 @@ export interface RetryPolicy {
 /** Input mapping (JSONPath references) */
 export type InputMapping = Record<string, string>
 
+/** Configuration for an HTTP Request node */
+export interface HttpRequestConfig {
+  url: string
+  method: string
+  timeout: number
+  headers: Record<string, string>
+}
+
 /** A process node */
 export interface FlowNode {
   id: string
@@ -46,7 +54,7 @@ export interface FlowNode {
   description?: string
   input_mapping?: InputMapping
   script?: string
-  config?: Record<string, string>
+  config?: HttpRequestConfig | Record<string, string>
   retry_policy?: RetryPolicy
   next?: string[]
 }
