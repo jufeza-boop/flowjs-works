@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "golang-pro": {
+      "source": "jeffallan/claude-skills",
+      "sourceType": "github",
+      "computedHash": "04dd56df210d6e79bf3528175f11fa213cf62040acc3b3b3ec11dc2c586b8e3c"
+    },
+    "react-vite-best-practices": {
+      "source": "asyrafhussin/agent-skills",
+      "sourceType": "github",
+      "computedHash": "f39617add5f4853e837aa7f09dfbe8dc6527b6debfa91d4ca89de5ed0ecd614a"
+    }
+  }
+}
