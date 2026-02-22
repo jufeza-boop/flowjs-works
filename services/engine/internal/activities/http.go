@@ -16,7 +16,7 @@ type HTTPActivity struct{}
 
 // Name returns the activity type name
 func (a *HTTPActivity) Name() string {
-	return "http"
+	return "http_request"
 }
 
 // Execute performs an HTTP request

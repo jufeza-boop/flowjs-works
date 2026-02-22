@@ -288,6 +288,29 @@ func TestExecute_EmptyNodeList(t *testing.T) {
 	require.NotNil(t, ctx)
 }
 
+// TestExecute_HttpRequestActivityRegistered verifies that the "http_request" activity type
+// is registered in the activity registry (regression for the "unknown activity type: http_request" bug).
+func TestExecute_HttpRequestActivityRegistered(t *testing.T) {
+	exec := newTestExecutor(t)
+
+	// A node with type "http_request" and a missing URL will fail at the activity level
+	// (not with "unknown activity type"), proving the type is recognised.
+	process := buildProcess("p9", []models.Node{
+		{
+			ID:   "http_node",
+			Type: "http_request",
+			Config: map[string]interface{}{
+				// url intentionally omitted to trigger activity-level error, not registry error
+			},
+		},
+	})
+
+	_, err := exec.ExecuteFromJSON(process, map[string]interface{}{})
+	require.Error(t, err)
+	// The error must NOT say "unknown activity type"
+	assert.NotContains(t, err.Error(), "unknown activity type")
+}
+
 // TestExecute_CatFactGETFlow validates an end-to-end HTTP GET flow against the
 // public catfact API. This is an external integration test and is skipped by
 // default unless FLOWJS_RUN_EXTERNAL_TESTS=1.
