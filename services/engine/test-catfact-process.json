@@ -21,12 +21,12 @@
   "nodes": [
     {
       "id": "get_cat_fact",
-      "type": "http",
+      "type": "http_request",
       "description": "GET cat fact from public API",
       "config": {
         "url": "https://fakerestapi.azurewebsites.net/api/v1/Activities",
         "method": "GET",
-        "timeout": 30      
+        "timeout": 30
       }
     }
   ],
