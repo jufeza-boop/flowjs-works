@@ -1,0 +1,12 @@
+{
+  "body": {
+    "id": 0,
+    "title": "string",
+    "dueDate": "2026-02-22T16:09:55.999Z",
+    "completed": true
+  },
+  "headers": {
+    "accept": "text/plain; v=1.0",
+    "content-type": "application/json; v=1.0"
+  }
+}
