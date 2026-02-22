@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import type { Node, Edge } from '@xyflow/react'
 import { NodePalette } from './components/NodePalette'
 import { DesignerCanvas } from './components/DesignerCanvas'
@@ -48,6 +48,13 @@ export default function App() {
     [selectedNode],
   )
 
+  // Clear selection if the node is deleted from the canvas
+  useEffect(() => {
+    if (selectedNode && !nodes.some((n) => n.id === selectedNode.id)) {
+      setSelectedNode(null)
+    }
+  }, [nodes, selectedNode])
+
   const handleRunFlow = useCallback(async () => {
     setRunLoading(true)
     setRunResult(null)
@@ -74,21 +81,19 @@ export default function App() {
           <nav className="flex gap-1">
             <button
               onClick={() => setView('designer')}
-              className={`text-sm px-3 py-1 rounded transition-colors ${
-                view === 'designer'
+              className={`text-sm px-3 py-1 rounded transition-colors ${view === 'designer'
                   ? 'bg-blue-50 text-blue-600 font-medium'
                   : 'text-gray-500 hover:text-gray-700'
-              }`}
+                }`}
             >
               Process Designer
             </button>
             <button
               onClick={() => setView('history')}
-              className={`text-sm px-3 py-1 rounded transition-colors ${
-                view === 'history'
+              className={`text-sm px-3 py-1 rounded transition-colors ${view === 'history'
                   ? 'bg-blue-50 text-blue-600 font-medium'
                   : 'text-gray-500 hover:text-gray-700'
-              }`}
+                }`}
             >
               Execution History
             </button>

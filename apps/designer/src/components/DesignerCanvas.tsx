@@ -105,6 +105,17 @@ export function DesignerCanvas({ onSelectionChange, onNodesChange, onEdgesChange
     [setEdges, propagateEdges],
   )
 
+  const onEdgesChangeWrapped = useCallback(
+    (changes: Parameters<typeof handleEdgesChange>[0]) => {
+      handleEdgesChange(changes)
+      setEdges((eds) => {
+        propagateEdges(eds)
+        return eds
+      })
+    },
+    [handleEdgesChange, setEdges, propagateEdges],
+  )
+
   const onNodesChangeWrapped = useCallback(
     (changes: Parameters<typeof handleNodesChange>[0]) => {
       handleNodesChange(changes)
@@ -130,9 +141,9 @@ export function DesignerCanvas({ onSelectionChange, onNodesChange, onEdgesChange
       const bounds = reactFlowWrapper.current.getBoundingClientRect()
       const position = rfInstance
         ? rfInstance.screenToFlowPosition({
-            x: event.clientX - bounds.left,
-            y: event.clientY - bounds.top,
-          })
+          x: event.clientX - bounds.left,
+          y: event.clientY - bounds.top,
+        })
         : { x: event.clientX - bounds.left, y: event.clientY - bounds.top }
 
       const id = `${type}_${Date.now()}_${nodeCounter++}`
@@ -169,7 +180,7 @@ export function DesignerCanvas({ onSelectionChange, onNodesChange, onEdgesChange
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChangeWrapped}
-        onEdgesChange={handleEdgesChange}
+        onEdgesChange={onEdgesChangeWrapped}
         onConnect={onConnect}
         onInit={(instance) => setRfInstance(instance as unknown as ReactFlowInstance<Node<NodeData>, Edge>)}
         onDrop={onDrop}
@@ -177,6 +188,7 @@ export function DesignerCanvas({ onSelectionChange, onNodesChange, onEdgesChange
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
+        deleteKeyCode={['Backspace', 'Delete']}
         fitView
         className="bg-gray-100"
       >
