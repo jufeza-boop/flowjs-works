@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { DesignerNode } from '../types/designer'
 import type { SchemaField } from '../types/mapper'
-import type { InputMapping } from '../types/dsl'
+import type { InputMapping, HttpRequestConfig } from '../types/dsl'
 import { buildSourceFields } from '../lib/mapper'
 import { liveTest } from '../lib/api'
 import { DataMapper } from './DataMapper'
@@ -22,6 +22,25 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
   const [liveTestResult, setLiveTestResult] = useState<string | null>(null)
   const [liveTestError, setLiveTestError] = useState<string | null>(null)
   const [liveTestLoading, setLiveTestLoading] = useState(false)
+  const [headerRows, setHeaderRows] = useState<Array<{ uid: number; key: string; value: string }>>([])
+  const uidCounterRef = useRef(0)
+  const nextUid = () => ++uidCounterRef.current
+
+  useEffect(() => {
+    if (selectedNode?.data.nodeKind === 'process' && selectedNode.data.type === 'http_request') {
+      const config = selectedNode.data.config as HttpRequestConfig | undefined
+      setHeaderRows(
+        Object.entries(config?.headers ?? {}).map(([key, value]) => ({
+          uid: nextUid(),
+          key,
+          value,
+        })),
+      )
+    } else {
+      setHeaderRows([])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedNode?.id])
 
   if (!selectedNode) {
     return (
@@ -77,6 +96,38 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
   const handleMonacoSave = (script: string) => {
     handleScriptChange(script)
     setShowMonaco(false)
+  }
+
+  const handleHttpConfigChange = (field: keyof HttpRequestConfig, value: string | number) => {
+    if (data.nodeKind !== 'process') return
+    const currentConfig = (data.config as HttpRequestConfig) ?? {}
+    onNodeUpdate(selectedNode.id, { ...data, config: { ...currentConfig, [field]: value } })
+  }
+
+  const syncHeaders = (rows: Array<{ key: string; value: string }>) => {
+    if (data.nodeKind !== 'process') return
+    const headers = rows.reduce<Record<string, string>>((acc, row) => {
+      if (row.key) acc[row.key] = row.value
+      return acc
+    }, {})
+    const currentConfig = (data.config as HttpRequestConfig) ?? {}
+    onNodeUpdate(selectedNode.id, { ...data, config: { ...currentConfig, headers } })
+  }
+
+  const handleHeaderChange = (uid: number, field: 'key' | 'value', val: string) => {
+    const newRows = headerRows.map((row) => (row.uid === uid ? { ...row, [field]: val } : row))
+    setHeaderRows(newRows)
+    syncHeaders(newRows)
+  }
+
+  const handleAddHeader = () => {
+    setHeaderRows([...headerRows, { uid: nextUid(), key: '', value: '' }])
+  }
+
+  const handleRemoveHeader = (uid: number) => {
+    const newRows = headerRows.filter((row) => row.uid !== uid)
+    setHeaderRows(newRows)
+    syncHeaders(newRows)
   }
 
   const handleLiveTest = async () => {
@@ -158,6 +209,96 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
                 className="w-full text-xs font-mono border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
                 placeholder="export default (input) => { return input; }"
               />
+            </div>
+          )}
+
+          {/* HTTP Request config */}
+          {data.nodeKind === 'process' && data.type === 'http_request' && (
+            <div className="space-y-3">
+              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                HTTP Request
+              </label>
+
+              {/* URL */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">URL</label>
+                <input
+                  type="text"
+                  value={(data.config as HttpRequestConfig)?.url ?? ''}
+                  onChange={(e) => handleHttpConfigChange('url', e.target.value)}
+                  className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  placeholder="https://api.example.com"
+                />
+              </div>
+
+              {/* Method */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Method</label>
+                <select
+                  value={(data.config as HttpRequestConfig)?.method ?? 'GET'}
+                  onChange={(e) => handleHttpConfigChange('method', e.target.value)}
+                  className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+                >
+                  {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Timeout */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Timeout (s)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={(data.config as HttpRequestConfig)?.timeout ?? 30}
+                  onChange={(e) => {
+                    const num = parseInt(e.target.value, 10)
+                    if (!isNaN(num) && num >= 0) handleHttpConfigChange('timeout', num)
+                  }}
+                  className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+
+              {/* Headers */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-gray-600">Headers</label>
+                  <button
+                    onClick={handleAddHeader}
+                    className="text-[10px] px-2 py-0.5 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors"
+                  >
+                    + Add
+                  </button>
+                </div>
+                <div className="space-y-1">
+                  {headerRows.map((row) => (
+                    <div key={row.uid} className="flex gap-1 items-center">
+                      <input
+                        type="text"
+                        value={row.key}
+                        onChange={(e) => handleHeaderChange(row.uid, 'key', e.target.value)}
+                        className="w-24 text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        placeholder="Key"
+                      />
+                      <input
+                        type="text"
+                        value={row.value}
+                        onChange={(e) => handleHeaderChange(row.uid, 'value', e.target.value)}
+                        className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        placeholder="Value"
+                      />
+                      <button
+                        onClick={() => handleRemoveHeader(row.uid)}
+                        className="text-[10px] px-1.5 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200 transition-colors"
+                        aria-label="Remove header"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
