@@ -5,6 +5,8 @@ import { DesignerCanvas } from './components/DesignerCanvas'
 import { ConfigPanel } from './components/ConfigPanel'
 import { ExportButton } from './components/ExportButton'
 import { ExecutionHistory } from './components/ExecutionHistory'
+import { serializeGraph } from './lib/serializer'
+import { runFlow } from './lib/api'
 import type { NodeData, DesignerNode } from './types/designer'
 import type { FlowDefinition } from './types/dsl'
 
@@ -28,6 +30,9 @@ export default function App() {
   const [selectedNode, setSelectedNode] = useState<DesignerNode | null>(null)
   const [nodes, setNodes] = useState<Node<NodeData>[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
+  const [runLoading, setRunLoading] = useState(false)
+  const [runResult, setRunResult] = useState<string | null>(null)
+  const [runError, setRunError] = useState<string | null>(null)
 
   const handleNodeUpdate = useCallback(
     (nodeId: string, updates: Partial<NodeData>) => {
@@ -42,6 +47,21 @@ export default function App() {
     },
     [selectedNode],
   )
+
+  const handleRunFlow = useCallback(async () => {
+    setRunLoading(true)
+    setRunResult(null)
+    setRunError(null)
+    try {
+      const dsl = serializeGraph(nodes, edges, DEFAULT_DEFINITION)
+      const result = await runFlow({ dsl })
+      setRunResult(JSON.stringify(result, null, 2))
+    } catch (err) {
+      setRunError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setRunLoading(false)
+    }
+  }, [nodes, edges])
 
   return (
     <div className="h-screen w-screen flex flex-col bg-white overflow-hidden">
@@ -75,7 +95,17 @@ export default function App() {
           </nav>
         </div>
         {view === 'designer' && (
-          <ExportButton nodes={nodes} edges={edges} definition={DEFAULT_DEFINITION} />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleRunFlow}
+              disabled={runLoading}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+            >
+              <span>{runLoading ? '⏳' : '▶'}</span>
+              {runLoading ? 'Running…' : 'Run Flow'}
+            </button>
+            <ExportButton nodes={nodes} edges={edges} definition={DEFAULT_DEFINITION} />
+          </div>
         )}
       </header>
 
@@ -100,6 +130,23 @@ export default function App() {
           <ExecutionHistory />
         )}
       </main>
+
+      {/* Run Flow result toast */}
+      {(runResult || runError) && (
+        <div
+          role="alert"
+          aria-live="polite"
+          className="fixed bottom-4 right-4 z-50 w-96 max-h-72 flex flex-col rounded-lg shadow-xl overflow-hidden border"
+        >
+          <div className={`flex items-center justify-between px-3 py-2 text-xs font-semibold text-white ${runError ? 'bg-red-600' : 'bg-green-600'}`}>
+            <span>{runError ? '✕ Flow execution failed' : '✓ Flow executed successfully'}</span>
+            <button onClick={() => { setRunResult(null); setRunError(null) }} className="hover:opacity-75" aria-label="Dismiss">×</button>
+          </div>
+          <pre className="flex-1 overflow-auto p-3 text-[10px] font-mono bg-gray-900 text-green-400">
+            {runError ?? runResult}
+          </pre>
+        </div>
+      )}
     </div>
   )
 }

@@ -288,6 +288,63 @@ func TestExecute_EmptyNodeList(t *testing.T) {
 	require.NotNil(t, ctx)
 }
 
+// TestExecute_HttpRequestActivityRegistered verifies that the "http_request" activity type
+// is registered in the activity registry (regression for the "unknown activity type: http_request" bug).
+// It also verifies that an unreachable URL does NOT abort the flow — the error is captured in
+// the node output under the "error" key instead of being propagated as a fatal execution error.
+func TestExecute_HttpRequestActivityRegistered(t *testing.T) {
+	exec := newTestExecutor(t)
+
+	// A node with type "http_request" and an unreachable host: the flow must complete
+	// successfully (no Go error returned) and the error must be captured in the output.
+	process := buildProcess("p9", []models.Node{
+		{
+			ID:   "http_node",
+			Type: "http_request",
+			Config: map[string]interface{}{
+				"url":    "http://localhost:19999", // nothing listening on this port
+				"method": "GET",
+			},
+		},
+	})
+
+	ctx, err := exec.ExecuteFromJSON(process, map[string]interface{}{})
+
+	// The flow must NOT return a fatal error
+	require.NoError(t, err)
+	require.NotNil(t, ctx)
+
+	// The node status must be "success" (error is captured in output, not propagated)
+	statusVal, getErr := ctx.GetValue("$.nodes.http_node.status")
+	require.NoError(t, getErr)
+	assert.Equal(t, "success", statusVal)
+
+	// The output must contain an "error" field describing the network problem
+	outputVal, getErr := ctx.GetValue("$.nodes.http_node.output")
+	require.NoError(t, getErr)
+	outputMap, ok := outputVal.(map[string]interface{})
+	require.True(t, ok, "output should be a map")
+	assert.NotEmpty(t, outputMap["error"], "unreachable URL error should be captured in output.error")
+}
+
+// TestExecute_HttpRequestMissingURL verifies that omitting the url in config is still a
+// fatal configuration error (not a network error, so the flow fails early).
+func TestExecute_HttpRequestMissingURL(t *testing.T) {
+	exec := newTestExecutor(t)
+
+	process := buildProcess("p10", []models.Node{
+		{
+			ID:     "http_node",
+			Type:   "http_request",
+			Config: map[string]interface{}{},
+		},
+	})
+
+	_, err := exec.ExecuteFromJSON(process, map[string]interface{}{})
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "unknown activity type")
+}
+
 // TestExecute_CatFactGETFlow validates an end-to-end HTTP GET flow against the
 // public catfact API. This is an external integration test and is skipped by
 // default unless FLOWJS_RUN_EXTERNAL_TESTS=1.

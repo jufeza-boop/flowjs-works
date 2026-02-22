@@ -92,6 +92,19 @@ func main() {
 // ---------------------------------------------------------------------------
 
 func registerRoutes(mux *http.ServeMux, rawDB *sql.DB) {
+	// GET /health — liveness probe
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := rawDB.Ping(); err != nil {
+			jsonError(w, "database unreachable: "+err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		jsonOK(w, map[string]string{"status": "ok", "service": "audit-logger"})
+	})
+
 	// GET /executions — list all execution headers (most recent first)
 	mux.HandleFunc("/executions", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -220,7 +233,7 @@ func registerRoutes(mux *http.ServeMux, rawDB *sql.DB) {
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

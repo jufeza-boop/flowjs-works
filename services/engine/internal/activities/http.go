@@ -16,24 +16,28 @@ type HTTPActivity struct{}
 
 // Name returns the activity type name
 func (a *HTTPActivity) Name() string {
-	return "http"
+	return "http_request"
 }
 
-// Execute performs an HTTP request
+// Execute performs an HTTP request.
+// Network and transport errors are captured in the output under the "error" key rather
+// than propagated as fatal Go errors, so the flow can continue and the caller can inspect
+// the result via transitions/conditions.  HTTP 4xx/5xx responses are also returned as
+// data (not errors) — only the status_code distinguishes success from failure.
 func (a *HTTPActivity) Execute(input map[string]interface{}, config map[string]interface{}, ctx *models.ExecutionContext) (map[string]interface{}, error) {
 	// Extract configuration
 	url, ok := config["url"].(string)
-	if !ok {
+	if !ok || url == "" {
 		return nil, fmt.Errorf("url is required in config")
 	}
 	
 	method := "GET"
-	if methodVal, ok := config["method"].(string); ok {
+	if methodVal, ok := config["method"].(string); ok && methodVal != "" {
 		method = methodVal
 	}
 	
 	timeout := 30 * time.Second
-	if timeoutVal, ok := config["timeout"].(float64); ok {
+	if timeoutVal, ok := config["timeout"].(float64); ok && timeoutVal > 0 {
 		timeout = time.Duration(timeoutVal) * time.Second
 	}
 	
@@ -77,17 +81,27 @@ func (a *HTTPActivity) Execute(input map[string]interface{}, config map[string]i
 		}
 	}
 	
-	// Execute request
+	// Execute request — transport errors are captured as output, not fatal errors.
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return map[string]interface{}{
+			"status_code": 0,
+			"body":        nil,
+			"headers":     map[string]interface{}{},
+			"error":       err.Error(),
+		}, nil
 	}
 	defer resp.Body.Close()
 	
 	// Read response body
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return map[string]interface{}{
+			"status_code": resp.StatusCode,
+			"body":        nil,
+			"headers":     map[string]interface{}{},
+			"error":       fmt.Sprintf("failed to read response body: %v", err),
+		}, nil
 	}
 	
 	// Try to parse as JSON, fall back to string
@@ -96,17 +110,11 @@ func (a *HTTPActivity) Execute(input map[string]interface{}, config map[string]i
 		responseData = string(respBody)
 	}
 	
-	// Prepare output
-	output := map[string]interface{}{
+	// Return full response as output — HTTP 4xx/5xx are data, not fatal errors.
+	// The caller can inspect status_code via transitions/conditions.
+	return map[string]interface{}{
 		"status_code": resp.StatusCode,
 		"headers":     resp.Header,
 		"body":        responseData,
-	}
-	
-	// Check for HTTP errors
-	if resp.StatusCode >= 400 {
-		return output, fmt.Errorf("HTTP request failed with status %d", resp.StatusCode)
-	}
-	
-	return output, nil
+	}, nil
 }

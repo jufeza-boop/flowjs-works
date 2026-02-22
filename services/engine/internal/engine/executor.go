@@ -80,7 +80,7 @@ func (e *ProcessExecutor) Execute(process *models.Process, triggerData map[strin
 			ctx.SetNodeStatus(node.ID, "error")
 			
 			// Send audit log
-			e.sendAuditLog(executionID, node.ID, "error", nil, err.Error())
+			e.sendAuditLog(executionID, node.ID, node.Type, "error", nil, nil, err.Error())
 			
 			// According to specs, stop on error
 			return ctx, fmt.Errorf("node %s failed: %w", node.ID, err)
@@ -155,7 +155,7 @@ func (e *ProcessExecutor) executeNode(node *models.Node, ctx *models.ExecutionCo
 	if err != nil {
 		// All attempts failed
 		ctx.SetNodeStatus(node.ID, "error")
-		e.sendAuditLog(ctx.ExecutionID, node.ID, "error", nil, err.Error())
+		e.sendAuditLog(ctx.ExecutionID, node.ID, node.Type, "error", input, nil, err.Error())
 		return err
 	}
 	
@@ -166,13 +166,13 @@ func (e *ProcessExecutor) executeNode(node *models.Node, ctx *models.ExecutionCo
 	log.Printf("Node %s completed successfully in %v", node.ID, duration)
 	
 	// Send audit log
-	e.sendAuditLog(ctx.ExecutionID, node.ID, "success", output, "")
+	e.sendAuditLog(ctx.ExecutionID, node.ID, node.Type, "success", input, output, "")
 	
 	return nil
 }
 
 // sendAuditLog sends an audit message to NATS
-func (e *ProcessExecutor) sendAuditLog(executionID, nodeID, status string, output map[string]interface{}, errorMsg string) {
+func (e *ProcessExecutor) sendAuditLog(executionID, nodeID, nodeType, status string, input, output map[string]interface{}, errorMsg string) {
 	if !e.auditEnabled || e.natsConn == nil {
 		return
 	}
@@ -180,8 +180,10 @@ func (e *ProcessExecutor) sendAuditLog(executionID, nodeID, status string, outpu
 	auditMsg := map[string]interface{}{
 		"execution_id": executionID,
 		"node_id":      nodeID,
+		"node_type":    nodeType,
 		"status":       status,
 		"timestamp":    time.Now().UTC().Format(time.RFC3339),
+		"input":        input,
 		"output":       output,
 	}
 	
