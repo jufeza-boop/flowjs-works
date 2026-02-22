@@ -1,0 +1,38 @@
+{
+  "definition": {
+    "id": "fakerest-post-process",
+    "version": "1.0.0",
+    "name": "FakeRest POST Process",
+    "description": "Integration flow that performs a POST request to FakeRest API",
+    "settings": {
+      "persistence": "full",
+      "timeout": 30000,
+      "error_strategy": "stop_and_rollback"
+    }
+  },
+  "trigger": {
+    "id": "trg_01",
+    "type": "http_webhook",
+    "config": {
+      "path": "/v1/fakerest/post",
+      "method": "POST"
+    }
+  },
+  "nodes": [
+    {
+      "id": "post_activity",
+      "type": "http",
+      "description": "POST activity to FakeRest API",
+      "input_mapping": {
+        "headers": "$.trigger.headers",
+        "body": "$.trigger.body"
+      },
+      "config": {
+        "url": "https://fakerestapi.azurewebsites.net/api/v1/Activities",
+        "method": "POST",
+        "timeout": 30
+      }
+    }
+  ],
+  "transitions": []
+}
