@@ -174,4 +174,47 @@ describe('serializeGraph', () => {
       headers: { Accept: 'application/json' },
     })
   })
+
+  it('includes type field in all transitions', () => {
+    const nodes: Node<NodeData>[] = [
+      {
+        id: 'trg_01',
+        type: 'triggerNode',
+        position: { x: 0, y: 0 },
+        data: {
+          nodeKind: 'trigger',
+          id: 'trg_01',
+          type: 'rest',
+          config: { path: '/v1/flow', method: 'POST' },
+        },
+      },
+      {
+        id: 'n1',
+        type: 'activityNode',
+        position: { x: 200, y: 0 },
+        data: { nodeKind: 'process', id: 'n1', type: 'http', description: 'HTTP call' },
+      },
+      {
+        id: 'n2',
+        type: 'activityNode',
+        position: { x: 400, y: 0 },
+        data: { nodeKind: 'process', id: 'n2', type: 'log', description: 'Log' },
+      },
+    ]
+
+    const edges: Edge[] = [
+      { id: 'e1', source: 'n1', target: 'n2', data: { transitionType: 'success' } },
+      { id: 'e2', source: 'n2', target: 'n1', data: { transitionType: 'error' } },
+    ]
+
+    const dsl = serializeGraph(nodes, edges, testDefinition)
+    expect(dsl.transitions).toHaveLength(2)
+    expect(dsl.transitions[0]).toMatchObject({ from: 'n1', to: 'n2', type: 'success' })
+    expect(dsl.transitions[1]).toMatchObject({ from: 'n2', to: 'n1', type: 'error' })
+  })
+
+  it('uses rest as default trigger type', () => {
+    const dsl = serializeGraph([], [], testDefinition)
+    expect(dsl.trigger.type).toBe('rest')
+  })
 })

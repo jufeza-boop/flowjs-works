@@ -50,10 +50,19 @@ export interface NodeResult {
   status?: string
 }
 
+/** Flat node result item in the node_results array */
+export interface NodeResultItem {
+  node_id: string
+  status: string
+  output?: Record<string, unknown>
+}
+
 /** Response from the engine run-flow endpoint */
 export interface RunFlowResponse {
   execution_id: string
   nodes: Record<string, NodeResult>
+  /** Flat array of per-node execution results (used by DebugPanel) */
+  node_results?: NodeResultItem[]
   error?: string
 }
 

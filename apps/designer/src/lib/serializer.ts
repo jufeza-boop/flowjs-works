@@ -1,5 +1,5 @@
 import type { Node, Edge } from '@xyflow/react'
-import type { FlowDSL, FlowNode, FlowTrigger, FlowTransition, FlowDefinition } from '../types/dsl'
+import type { FlowDSL, FlowNode, FlowTrigger, FlowTransition, FlowDefinition, TransitionType } from '../types/dsl'
 import type { NodeData } from '../types/designer'
 
 /** Default flow definition metadata */
@@ -17,23 +17,17 @@ const DEFAULT_DEFINITION: FlowDefinition = {
 
 /**
  * Serializes a React Flow graph (nodes + edges) into the flowjs-works JSON DSL format.
- * The trigger node is extracted separately; all other nodes become entries in 'nodes'.
- * Edges become 'transitions' with optional condition metadata.
+ * Edges with transitionType or condition data become transitions; plain edges without
+ * either are excluded to maintain backward compatibility.
  */
 export function serializeGraph(
   rfNodes: Node<NodeData>[],
   rfEdges: Edge[],
   definition: FlowDefinition = DEFAULT_DEFINITION,
 ): FlowDSL {
-  // Separate trigger from process nodes
-  const triggerRfNode = rfNodes.find(
-    (n) => n.data.nodeKind === 'trigger',
-  )
-  const processRfNodes = rfNodes.filter(
-    (n) => n.data.nodeKind === 'process',
-  )
+  const triggerRfNode = rfNodes.find((n) => n.data.nodeKind === 'trigger')
+  const processRfNodes = rfNodes.filter((n) => n.data.nodeKind === 'process')
 
-  // Build trigger
   let trigger: FlowTrigger
   if (triggerRfNode && triggerRfNode.data.nodeKind === 'trigger') {
     const { nodeKind: _k, ...rest } = triggerRfNode.data
@@ -41,12 +35,11 @@ export function serializeGraph(
   } else {
     trigger = {
       id: 'trg_01',
-      type: 'http_webhook',
+      type: 'rest',
       config: { path: '/v1/flow', method: 'POST' },
     }
   }
 
-  // Build next map from edges: source -> [target, ...]
   const nextMap = new Map<string, string[]>()
   for (const edge of rfEdges) {
     const list = nextMap.get(edge.source) ?? []
@@ -54,7 +47,6 @@ export function serializeGraph(
     nextMap.set(edge.source, list)
   }
 
-  // Build process nodes
   const nodes: FlowNode[] = processRfNodes.map((rfNode) => {
     const { nodeKind: _k, ...rest } = rfNode.data as NodeData & { nodeKind: 'process' }
     const node = rest as FlowNode
@@ -65,14 +57,21 @@ export function serializeGraph(
     }
   })
 
-  // Build transitions from edges that have condition metadata
+  // Include edges that have explicit transitionType OR condition metadata
   const transitions: FlowTransition[] = rfEdges
-    .filter((e) => Boolean((e.data as { condition?: string } | undefined)?.condition))
-    .map((e) => ({
-      from: e.source,
-      to: e.target,
-      condition: (e.data as { condition: string }).condition,
-    }))
+    .filter((e) => {
+      const edgeData = e.data as { transitionType?: string; condition?: string } | undefined
+      return edgeData?.transitionType !== undefined || edgeData?.condition !== undefined
+    })
+    .map((e) => {
+      const edgeData = e.data as { transitionType?: string; condition?: string } | undefined
+      const type = (edgeData?.transitionType ?? 'success') as TransitionType
+      const result: FlowTransition = { from: e.source, to: e.target, type }
+      if (edgeData?.condition) {
+        result.condition = edgeData.condition
+      }
+      return result
+    })
 
   return { definition, trigger, nodes, transitions }
 }
