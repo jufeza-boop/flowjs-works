@@ -179,6 +179,8 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
         input_mapping: data.input_mapping || {},
         script,
         input_payload: parsedInput,
+        node_type: data.type as string,
+        config: (data.config as Record<string, unknown> | undefined) ?? undefined,
       })
       setLiveTestResult(JSON.stringify(result.output, null, 2))
     } catch (err) {

@@ -36,8 +36,8 @@ export function DebugPanel({ result, rawResult, onClose }: DebugPanelProps) {
                       {nr.status === 'success' ? '✓' : '✗'} {nr.status}
                     </span>
                   </td>
-                  <td className="px-3 py-1.5 font-mono text-gray-300 truncate max-w-xs" title={JSON.stringify(nr.output)}>
-                    {JSON.stringify(nr.output).slice(0, 120)}
+                  <td className="px-3 py-1.5 font-mono text-gray-300 truncate max-w-xs" title={JSON.stringify(nr.output ?? null)}>
+                    {nr.output !== undefined ? JSON.stringify(nr.output).slice(0, 120) : '—'}
                   </td>
                 </tr>
               ))}

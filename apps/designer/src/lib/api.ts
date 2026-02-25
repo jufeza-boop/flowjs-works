@@ -12,6 +12,10 @@ export interface LiveTestRequest {
   input_mapping: InputMapping
   script?: string
   input_payload: Record<string, unknown>
+  /** The DSL node type to execute (e.g. 'log', 'http', 'sql'). Defaults to 'logger' when absent. */
+  node_type?: string
+  /** Node config forwarded verbatim to the activity (e.g. {level, message} for log nodes). */
+  config?: Record<string, unknown>
 }
 
 /** Response from the engine live-test endpoint */

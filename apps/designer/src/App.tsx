@@ -67,8 +67,17 @@ export default function App() {
     try {
       const dsl = serializeGraph(nodes, edges, DEFAULT_DEFINITION)
       const result = await runFlow({ dsl })
+      // Normalize the engine's `nodes` map into a flat `node_results` array for DebugPanel.
+      // The engine returns nodes as Record<nodeId, {output, status}> — never as node_results.
+      if (!result.node_results?.length && result.nodes) {
+        result.node_results = Object.entries(result.nodes).map(([nodeId, nodeData]) => ({
+          node_id: nodeId,
+          status: (nodeData.status as string) ?? 'unknown',
+          output: nodeData.output as Record<string, unknown> | undefined,
+        }))
+      }
       setRunFlowResult(result)
-      // Fallback raw text if node_results is not populated
+      // Fallback raw text only when the nodes map is also empty
       if (!result.node_results?.length) {
         setRunRawResult(JSON.stringify(result, null, 2))
       }

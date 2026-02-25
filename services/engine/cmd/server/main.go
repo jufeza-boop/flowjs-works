@@ -111,16 +111,33 @@ func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor) {
 			InputMapping map[string]string      `json:"input_mapping"`
 			Script       string                 `json:"script"`
 			InputPayload map[string]interface{} `json:"input_payload"`
+			// NodeType lets the UI specify which DSL activity to run (e.g. "log", "http", "sql").
+			// Falls back to "script_ts" when Script is non-empty, or "logger" otherwise.
+			NodeType string                 `json:"node_type"`
+			// Config is the node's configuration forwarded verbatim to the activity.
+			Config map[string]interface{} `json:"config"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			jsonError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
 			return
 		}
 
-		// Build a minimal single-node process and execute it
-		nodeType := "logger"
-		if req.Script != "" {
+		// Determine which activity to run
+		nodeType := req.NodeType
+		switch {
+		case nodeType != "":
+			// Use whatever the UI asked for
+		case req.Script != "":
 			nodeType = "script_ts"
+		default:
+			nodeType = "logger"
+		}
+
+		// Build effective config: start from the request config (node's own config),
+		// then overlay defaults so mandatory fields are always present.
+		effectiveConfig := map[string]interface{}{"level": "info"}
+		for k, v := range req.Config {
+			effectiveConfig[k] = v
 		}
 
 		// Convert input_mapping from map[string]string to map[string]interface{}
@@ -138,7 +155,7 @@ func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor) {
 					Type:         nodeType,
 					InputMapping: inputMappingIface,
 					Script:       req.Script,
-					Config:       map[string]interface{}{"level": "info"},
+					Config:       effectiveConfig,
 				},
 			},
 		}
