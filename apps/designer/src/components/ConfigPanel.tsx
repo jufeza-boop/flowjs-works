@@ -3,8 +3,9 @@ import { useReactFlow } from '@xyflow/react'
 import type { DesignerNode, NodeData } from '../types/designer'
 import type { SchemaField } from '../types/mapper'
 import type { InputMapping, HttpNodeConfig } from '../types/dsl'
+import type { SecretMeta } from '../types/secrets'
 import { buildSourceFields } from '../lib/mapper'
-import { liveTest } from '../lib/api'
+import { liveTest, listSecrets } from '../lib/api'
 import { DataMapper } from './DataMapper'
 import { MonacoModal } from './MonacoModal'
 
@@ -26,8 +27,16 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
   const [liveTestError, setLiveTestError] = useState<string | null>(null)
   const [liveTestLoading, setLiveTestLoading] = useState(false)
   const [headerRows, setHeaderRows] = useState<Array<{ uid: number; key: string; value: string }>>([])
+  const [availableSecrets, setAvailableSecrets] = useState<SecretMeta[]>([])
   const uidCounterRef = useRef(0)
   const nextUid = () => ++uidCounterRef.current
+
+  // Load secrets list once on mount so the secret_ref dropdown is always populated
+  useEffect(() => {
+    listSecrets()
+      .then(setAvailableSecrets)
+      .catch(() => { /* silently ignore — user may not have secrets yet */ })
+  }, [])
 
   useEffect(() => {
     if (selectedNode?.data.nodeKind === 'process' && selectedNode.data.type === 'http') {
@@ -226,13 +235,21 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
           {needsSecretRef && (
             <div>
               <label className={labelClass}>Secret Ref</label>
-              <input
-                type="text"
+              <select
                 value={(data.secret_ref as string) || ''}
-                onChange={(e) => updateNodeDataCentralized({ secret_ref: e.target.value })}
-                className={inputClass}
-                placeholder="sec_my_credentials"
-              />
+                onChange={(e) => updateNodeDataCentralized({ secret_ref: e.target.value || undefined })}
+                className={selectClass}
+              >
+                <option value="">— none —</option>
+                {availableSecrets.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.type})
+                  </option>
+                ))}
+              </select>
+              {availableSecrets.length === 0 && (
+                <p className="text-xs text-gray-400 mt-1">No secrets found. Add them in the Secrets panel.</p>
+              )}
             </div>
           )}
 
