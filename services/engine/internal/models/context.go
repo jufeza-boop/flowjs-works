@@ -3,8 +3,13 @@ package models
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 )
+
+// arrayIndexRe matches a path part like "items[0]"
+var arrayIndexRe = regexp.MustCompile(`^(.+)\[(\d+)\]$`)
 
 // ExecutionContext holds the state during process execution
 type ExecutionContext struct {
@@ -68,6 +73,29 @@ func (ctx *ExecutionContext) GetValue(path string) (interface{}, error) {
 	
 	// Traverse the path
 	for _, part := range parts {
+		// Check for array index syntax, e.g. "items[0]"
+		if m := arrayIndexRe.FindStringSubmatch(part); m != nil {
+			key := m[1]
+			idx, _ := strconv.Atoi(m[2])
+			switch v := current.(type) {
+			case map[string]interface{}:
+				val, ok := v[key]
+				if !ok {
+					return nil, fmt.Errorf("path not found: %s at part %s", path, key)
+				}
+				slice, ok := val.([]interface{})
+				if !ok {
+					return nil, fmt.Errorf("path %s: %s is not a slice (type: %T)", path, key, val)
+				}
+				if idx < 0 || idx >= len(slice) {
+					return nil, fmt.Errorf("path %s: index %d out of range (len %d)", path, idx, len(slice))
+				}
+				current = slice[idx]
+			default:
+				return nil, fmt.Errorf("cannot traverse path %s: not a map at part %s (type: %T)", path, part, current)
+			}
+			continue
+		}
 		switch v := current.(type) {
 		case map[string]interface{}:
 			val, ok := v[part]

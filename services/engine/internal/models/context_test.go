@@ -248,3 +248,41 @@ func TestToJSON(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(jsonStr), &decoded))
 	assert.Equal(t, "exec-json-1", decoded["execution_id"])
 }
+
+func TestGetValue_ArrayIndex(t *testing.T) {
+ctx := NewExecutionContext("exec-arr-1")
+ctx.SetTriggerData(map[string]interface{}{
+"body": map[string]interface{}{
+"items": []interface{}{"alpha", "beta", "gamma"},
+},
+})
+val, err := ctx.GetValue("$.trigger.body.items[0]")
+require.NoError(t, err)
+assert.Equal(t, "alpha", val)
+}
+
+func TestGetValue_NestedArrayIndex(t *testing.T) {
+ctx := NewExecutionContext("exec-arr-2")
+ctx.SetTriggerData(map[string]interface{}{
+"body": map[string]interface{}{
+"users": []interface{}{
+map[string]interface{}{"name": "Alice", "age": float64(30)},
+map[string]interface{}{"name": "Bob",   "age": float64(25)},
+},
+},
+})
+val, err := ctx.GetValue("$.trigger.body.users[1].name")
+require.NoError(t, err)
+assert.Equal(t, "Bob", val)
+}
+
+func TestGetValue_ArrayIndexOutOfRange(t *testing.T) {
+ctx := NewExecutionContext("exec-arr-3")
+ctx.SetTriggerData(map[string]interface{}{
+"body": map[string]interface{}{
+"items": []interface{}{"only"},
+},
+})
+_, err := ctx.GetValue("$.trigger.body.items[5]")
+assert.Error(t, err)
+}

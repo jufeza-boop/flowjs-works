@@ -26,6 +26,13 @@ func NewActivityRegistry() *ActivityRegistry {
 	registry.Register(&LoggerActivity{})
 	registry.Register(&HTTPActivity{})
 	registry.Register(&ScriptActivity{})
+	registry.Register(&LogActivity{})
+	registry.Register(&CodeActivity{})
+	registry.Register(&FileActivity{})
+	registry.Register(&TransformActivity{})
+	registry.Register(&SQLActivity{})
+	registry.Register(&MailActivity{})
+	registry.Register(&RabbitMQActivity{})
 	
 	return registry
 }
