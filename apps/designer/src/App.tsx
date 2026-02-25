@@ -7,6 +7,7 @@ import { ConfigPanel } from './components/ConfigPanel'
 import { ExportButton } from './components/ExportButton'
 import { ExecutionHistory } from './components/ExecutionHistory'
 import { DebugPanel } from './components/DebugPanel'
+import { SecretsManager } from './components/SecretsManager'
 import { serializeGraph } from './lib/serializer'
 import { runFlow } from './lib/api'
 import type { RunFlowResponse } from './lib/api'
@@ -25,7 +26,7 @@ const DEFAULT_DEFINITION: FlowDefinition = {
   },
 }
 
-type View = 'designer' | 'history'
+type View = 'designer' | 'history' | 'secrets'
 
 /** Root application — three-column designer layout or execution history view */
 export default function App() {
@@ -120,6 +121,15 @@ export default function App() {
             >
               Execution History
             </button>
+            <button
+              onClick={() => setView('secrets')}
+              className={`text-sm px-3 py-1 rounded transition-colors ${view === 'secrets'
+                ? 'bg-blue-50 text-blue-600 font-medium'
+                : 'text-gray-500 hover:text-gray-700'
+                }`}
+            >
+              🔐 Secrets
+            </button>
           </nav>
         </div>
         {view === 'designer' && (
@@ -151,8 +161,10 @@ export default function App() {
               <ConfigPanel selectedNode={selectedNode} onNodeUpdate={handleNodeUpdate} allNodes={nodes as DesignerNode[]} />
             </ReactFlowProvider>
           </>
-        ) : (
+        ) : view === 'history' ? (
           <ExecutionHistory />
+        ) : (
+          <SecretsManager />
         )}
       </main>
 

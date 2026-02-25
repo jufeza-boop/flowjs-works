@@ -1,5 +1,6 @@
 import type { Execution, ActivityLog } from '../types/audit'
 import type { InputMapping, FlowDSL } from '../types/dsl'
+import type { SecretMeta, SecretInput } from '../types/secrets'
 
 /** Base URL for the audit-logger HTTP API */
 const AUDIT_API_BASE = import.meta.env.VITE_AUDIT_API_URL ?? 'http://localhost:8080'
@@ -105,4 +106,40 @@ export async function fetchActivityLogs(executionId: string): Promise<ActivityLo
     throw new Error(`Failed to fetch activity logs (${res.status}): ${body}`)
   }
   return res.json() as Promise<ActivityLog[]>
+}
+
+// ── Secrets API ──────────────────────────────────────────────────────────────
+
+/** Fetch metadata for all secrets (values are never returned) */
+export async function listSecrets(): Promise<SecretMeta[]> {
+  const res = await fetch(`${ENGINE_API_BASE}/api/v1/secrets`)
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`Failed to list secrets (${res.status}): ${body}`)
+  }
+  return res.json() as Promise<SecretMeta[]>
+}
+
+/** Create or update a secret */
+export async function createSecret(input: SecretInput): Promise<void> {
+  const res = await fetch(`${ENGINE_API_BASE}/api/v1/secrets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`Failed to save secret (${res.status}): ${body}`)
+  }
+}
+
+/** Delete a secret by id */
+export async function deleteSecret(secretId: string): Promise<void> {
+  const res = await fetch(`${ENGINE_API_BASE}/api/v1/secrets/${encodeURIComponent(secretId)}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`Failed to delete secret (${res.status}): ${body}`)
+  }
 }

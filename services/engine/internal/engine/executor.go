@@ -55,6 +55,12 @@ e.natsConn.Close()
 }
 }
 
+// SetSecretResolver replaces the default NoopResolver with a real implementation.
+// Call this after connecting to the config DB.
+func (e *ProcessExecutor) SetSecretResolver(r secrets.SecretResolver) {
+e.secretResolver = r
+}
+
 // ExecuteFromJSON parses a JSON DSL and executes the process
 func (e *ProcessExecutor) ExecuteFromJSON(jsonData []byte, triggerData map[string]interface{}) (*models.ExecutionContext, error) {
 var process models.Process
