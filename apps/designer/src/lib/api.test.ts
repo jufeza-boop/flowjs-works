@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fetchExecutions, fetchActivityLogs, runFlow } from './api'
+import { fetchExecutions, fetchActivityLogs, runFlow, listSecrets, createSecret, deleteSecret } from './api'
 import type { Execution, ActivityLog } from '../types/audit'
+import type { SecretMeta } from '../types/secrets'
 
 describe('fetchExecutions', () => {
   beforeEach(() => {
@@ -166,5 +167,76 @@ describe('runFlow', () => {
         },
       }),
     ).rejects.toThrow('Run flow failed (422)')
+  })
+})
+
+// ── Secrets API ──────────────────────────────────────────────────────────────
+
+describe('listSecrets', () => {
+  beforeEach(() => { vi.restoreAllMocks() })
+
+  it('returns an array of secret metadata on success', async () => {
+    const mockSecrets: SecretMeta[] = [
+      { id: 'sec_pg', name: 'Postgres', type: 'connection_string', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' },
+    ]
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(mockSecrets) }))
+
+    const result = await listSecrets()
+    expect(result).toEqual(mockSecrets)
+  })
+
+  it('throws on non-ok response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503, text: () => Promise.resolve('unavailable') }))
+    await expect(listSecrets()).rejects.toThrow('Failed to list secrets (503)')
+  })
+})
+
+describe('createSecret', () => {
+  beforeEach(() => { vi.restoreAllMocks() })
+
+  it('resolves without error on 201', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ id: 'sec_1', status: 'saved' }) }))
+    await expect(createSecret({ id: 'sec_1', name: 'Test', type: 'token', value: { token: 'abc' } })).resolves.toBeUndefined()
+  })
+
+  it('throws on non-ok response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400, text: () => Promise.resolve('id is required') }))
+    await expect(createSecret({ id: '', name: '', type: 'token', value: {} })).rejects.toThrow('Failed to save secret (400)')
+  })
+
+  it('sends POST with correct body', async () => {
+    let capturedBody = ''
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, opts: RequestInit) => {
+      capturedBody = opts.body as string
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
+    }))
+    await createSecret({ id: 'sec_1', name: 'My Token', type: 'token', value: { token: 'xyz' } })
+    const parsed = JSON.parse(capturedBody) as { id: string; name: string }
+    expect(parsed.id).toBe('sec_1')
+    expect(parsed.name).toBe('My Token')
+  })
+})
+
+describe('deleteSecret', () => {
+  beforeEach(() => { vi.restoreAllMocks() })
+
+  it('resolves without error on 204', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve('') }))
+    await expect(deleteSecret('sec_pg')).resolves.toBeUndefined()
+  })
+
+  it('throws on non-ok response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503, text: () => Promise.resolve('store not configured') }))
+    await expect(deleteSecret('sec_pg')).rejects.toThrow('Failed to delete secret (503)')
+  })
+
+  it('URL-encodes the secret id', async () => {
+    let capturedUrl = ''
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      capturedUrl = url
+      return Promise.resolve({ ok: true, text: () => Promise.resolve('') })
+    }))
+    await deleteSecret('sec id with spaces')
+    expect(capturedUrl).toContain('sec%20id%20with%20spaces')
   })
 })

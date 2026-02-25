@@ -50,11 +50,14 @@ services:
     restart: always
     environment:
       - NATS_URL=nats://nats:4222
+      - DATABASE_URL=postgres://admin:flowjs_pass@postgres:5432/flowjs_config?sslmode=disable
       - HTTP_ADDR=:9090
+      - SECRETS_AES_KEY=18fc8cf22b9befe4abedbdef9275ed950eac44a12ae971936ee56f3e587e11d5
     ports:
       - "9090:9090"
     depends_on:
       - nats
+      - postgres
 
   # UI de gestión de base de datos (Opcional, muy útil para debug)
   pgadmin:

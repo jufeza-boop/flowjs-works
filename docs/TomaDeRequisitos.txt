@@ -1,0 +1,265 @@
+Especificación:
+Se trata de un framework de desarrollo no code para integración.
+El usuario entrará en la aplicacion mediante un login, y le aparecerá una pagina de incio.
+Desde este incio se podrán cargar varias vistas:
+	la vista procesos, donde se listarán los procesos implementados guardados, desde aqui se podrán abir en vista diseño, o vista despliegue.
+	La vista diseño: donde se podrán, modificar porcesos guardados o crear nuevos, y se podrán debuggear en vivo.
+	La vista despliegues donde se podrá ver el estado de un proceso, si está desplegado o no, y si lo está logs de ejecuciones, errores.
+Un proceso, tendrá la especificacion de la lógica de esa integración. Contendra siempre un tirgger, nodos y como interactuan los nodos entre sí.
+Triger: serán la definicion de como arranca el proceso:
+	tipos de Trigger: 
+		Cron: se arrancara de forma automática, segun una expresion cron.
+			Salida: datetime
+		Servicio rest/soap, se leventa un api.
+			Salida: todos los datos de la peticion metodo "GET", "POST", "PUT", "DELETE", "PATCH", header (elemento repetitivo), data (para put/post), autenticacion, timeout
+		queue: escucha en una queue RabbitMQ.
+			Salida:
+				"mensaje": {
+					  "payload": "{ \"event\": \"login\", \"user\": 123 }",
+					  "propiedades": {
+						"delivery_mode": 2,
+						"priority": 10,
+						"content_type": "application/json",
+						"headers": { "x-retry-count": 0 }
+					  }
+					}
+		MCP: arrancará por protocolo MCP.
+			"solicitud_herramienta": {
+			"method": "tools/call",
+			"params": {
+			  "name": "query_database",
+			  "arguments": {
+				"sql": "SELECT * FROM ventas LIMIT 5"
+			  }
+			}
+		  },
+		  "contexto_cliente": {
+			"version_protocolo": "2024-11-05",
+			"capabilities": {
+			  "roots": { "listChanged": true },
+			  "sampling": {}
+			}
+		  }
+
+Los nodos, son una configuración para conectar con diferentes sistemas externos o internos o ejecutar código, transformaciones de datos, frear ficheros.
+Tendrán una configuración de entrada/salida de datos específica por cada tipo y se podrá mapear info de la salida de otros nodos ejecutados anteriormente o del Trigger. 
+	Tipos de nodos:
+		http: permite cualquier interacción con un servicio http
+			Entrada: url, metodo "GET", "POST", "PUT", "DELETE", "PATCH", header (elemento repetitivo), data (para put/post), autenticacion, timeout
+			Salida: data (response o body), header (elemento repetitivo), linea_de_estado.
+		SFTP: listar/descargar y enviar ficheros por protocolo sftp, debe permitir filtro regex para listar.
+			Entrada: server, port, timeout,autenticacion, carpeta, metodo (get/put), si es get: filtro ( regex para que liste y descargue los que la cumplan) y profundidad fecha maxima de los ficheros. si es put, check sobrescribir, y chcek crear carpeta si no existe.
+			Salida: get: ficheros descagrados. put: resultado del envio.
+		S3:  listar/descargar y enviar ficheros por protocolo s3, debe permitir filtro regex para listar.
+			Entrada: server, port, timeout, autenticacion, carpeta, metodo (get/put), si es get: filtro ( regex para que liste y descargue los que la cumplan) y profundidad fecha maxima de los ficheros. si es put, check sobrescribir, y chcek crear carpeta si no existe.
+			Salida: get: ficheros descagrados. put: resultado del envio.
+		SMB:  listar/descargar y enviar ficheros por protocolo smb, debe permitir filtro regex para listar.
+			Entrada: server, port, timeout, autenticacion, carpeta, metodo (get/put), si es get: filtro ( regex para que liste y descargue los que la cumplan) y profundidad fecha maxima de los ficheros. si es put, check sobrescribir, y chcek crear carpeta si no existe.
+			Salida: get: ficheros descagrados. put: resultado del envio.
+		mail: listar y obtener, y enviar mail.
+			 entrada: 
+			 comun:
+			 {
+			  "configuracion_servidor": {
+				"host": "smtp.gmail.com / mail.empresa.com",
+				"puerto": 587,
+				"seguridad": "TLS / SSL / STARTTLS",
+				"autenticacion": {
+				  "usuario": "tu_correo@ejemplo.com",
+				  "password": "app_password_o_token"
+				}
+			  }
+				Enviar:
+					
+					  "sobre_y_cabeceras": {
+						"remitente": "Nombre <tu_correo@ejemplo.com>",
+						"destinatarios": {
+						  "para": ["cliente1@gmail.com", "cliente2@yahoo.com"],
+						  "cc": ["jefe@empresa.com"],
+						  "bcc": ["archivo@empresa.com"]
+						},
+						"asunto": "Resumen de ventas - Febrero 2026",
+						"prioridad": "Alta / Normal"
+					  },
+					  "contenido_mensaje": {
+						"cuerpo_texto": "Hola, adjunto el reporte solicitado.",
+						"cuerpo_html": "<html><body><h1>Reporte</h1><p>Hola, ...</p></body></html>",
+						"encoding": "UTF-8"
+					  },
+					  "adjuntos": [
+						{
+						  "nombre_archivo": "reporte.pdf",
+						  "contenido_base64": "JVBERi0xLjQKJ...",
+						  "tipo_mime": "application/pdf"
+						}
+					  ]
+					}
+				Listar/obtener:
+					filtro:
+						asunto:
+						contenido_mensaje:
+						estado: leido o no
+						contieneAdjunto:nombreAdjunto
+					maxMensajes:10					
+			 Salida:
+				Enviar: 
+					Resultado:enviado o fail.
+					mensajeError: si lo hay
+				Obtener:
+				lista de mensajes:
+					 "sobre_y_cabeceras": {
+						"remitente": "Nombre <tu_correo@ejemplo.com>",
+						"destinatarios": {
+						  "para": ["cliente1@gmail.com", "cliente2@yahoo.com"],
+						  "cc": ["jefe@empresa.com"],
+						  "bcc": ["archivo@empresa.com"]
+						},
+						"asunto": "Resumen de ventas - Febrero 2026",
+						"prioridad": "Alta / Normal"
+					  },
+					  "contenido_mensaje": {
+						"cuerpo_texto": "Hola, adjunto el reporte solicitado.",
+						"cuerpo_html": "<html><body><h1>Reporte</h1><p>Hola, ...</p></body></html>",
+						"encoding": "UTF-8"
+					  },
+					  "adjuntos": [
+						{
+						  "nombre_archivo": "reporte.pdf",
+						  "contenido_base64": "JVBERi0xLjQKJ...",
+						  "tipo_mime": "application/pdf"
+						}
+					  ]
+					}
+		RabbitMQ: permite enviar mensajes a queue RabbitMQ.
+			Entrada
+				{
+				  "configuracion_rabbit_mq": {
+					"conexion": {
+					  "url_amqp": "amqp://user:pass@localhost:5672/%2f",
+					  "vhost": "/"
+					},
+					"destino": {
+					  "exchange": "logs_exchange",
+					  "routing_key": "error.critical",
+					  "mandatory": true
+					},
+					"mensaje": {
+					  "payload": "{ \"event\": \"login\", \"user\": 123 }",
+					  "propiedades": {
+						"delivery_mode": 2,
+						"priority": 10,
+						"content_type": "application/json",
+						"headers": { "x-retry-count": 0 }
+					  }
+					}
+				  }
+				}
+			Salida
+				{
+				  "resultado": {
+					"delivery_tag": 1,
+					"ack": true,
+					"mensaje": "Mensaje publicado y persistido en disco."
+				  }
+				}
+		sql: permite hacer interaccion a un bbdd (postgre/oracle/mysql):
+			Entrada: 
+				{
+				  "configuracion_conexion": {
+					"motor": "PostgreSQL / MySQL / Oracle / SQL Server",
+					"host": "db.ejemplo.com o dirección IP",
+					"puerto": 5432,
+					"base_de_datos": "nombre_de_tu_bd",
+					"esquema": "public (opcional, común en Postgres)",
+					"credenciales": {
+					  "usuario": "admin_user",
+					  "password": "tu_password_seguro"
+					}
+				  },
+				  "ejecucion": {
+					"sentencia_sql": "SELECT nombre, email FROM usuarios WHERE activo = true;",
+					"parametros_consulta": {
+					  "id": 123,
+					  "tipo": "premium"
+					},
+					"timeout_ms": 5000,
+					"autocommit": false
+				  },
+				  "seguridad_avanzada": {
+					"ssl_mode": "require",
+					"certificado_ca": "ruta/al/certificado.pem"
+				  }
+				}
+			Salida:
+				{
+				  "estado_ejecucion": {
+					"codigo": "OK",
+					"filas_afectadas": 150,
+					"tiempo_ejecucion_ms": 12.5,
+					"oid": null
+				  },
+				  "metadatos_columnas": [
+					{ "nombre": "nombre", "tipo": "VARCHAR(100)" },
+					{ "nombre": "email", "tipo": "VARCHAR(255)" }
+				  ],
+				  "resultado": [
+					{ "nombre": "Ana García", "email": "ana@ejemplo.com" },
+					{ "nombre": "Carlos Pérez", "email": "carlos@ejemplo.com" }
+				  ],
+				  "errores_posibles": {
+					"sql_state": "00000",
+					"mensaje": null
+				  }
+				}
+		code: permite ejecutar un script personalizado.
+			Entrada: script js.
+			Salida: resultado js.
+		log: generará una linea de log, tendra configuracion: ERROR, WARNING, INFO, DEBUG" y el mensaje a mostrar.
+			Entrada
+				Tipo: ERROR, WARNING, INFO, DEBUG, mensaje:""
+		transform: permitirá transformar tipos de datos: json2csv, json2xml, xml2json.
+			Entrada: 
+				TipoConversion: json2csv, json2xml, xml2json
+				Data: datos a convertir en texto o binario.
+				Espec:
+					json2csv{					 
+					  "configuracion_csv": {
+						"delimitador": ",",
+						"incluir_cabecera": true,
+						"encapsular_texto": "\"",
+						"fin_de_linea": "\n"
+					  },
+					  "logica_aplanamiento": {
+						"aplanar_objetos": true,
+						"separador_niveles": "_",
+						"manejo_arrays": "join / ignore / expand",
+						"columnas_especificas": ["id", "perfil_nombre"]
+					  }
+					}
+					xml2json
+						"configuracion_transformacion": {
+						"ignorar_namespaces": false,
+						"eliminar_espacios_blancos": true
+						"xslt":"especificacion xslt"
+				  json2xml
+					"JOLT":"especificacion JOLT"
+						
+		file: permitira crear, leeer y borrar ficheros.
+			tipo: crear,borrar,leer
+			rutaFicheros
+			(solo si es crear)
+				Contenido
+				Sobrescibir O escribir a continuacion.
+				
+Transiciones entre nodos: Las uniones entre nodos se clasifican en:
+	sucess: el nodo anterior funciono.
+	Error: el nodo anterior falló
+	condition: Se debe cumplir una condicion.
+	noCondition: esta transicion solo puede aparecer cuando hay una condition, sería como if else.
+Cada nodo tiene que tener al menos una transicion anterior, si es el primer notod la transicion será desde el trigger.
+Ejemplo:
+	triggerCron->
+		HTTP->succes->file
+			->error->log
+Sercrets:
+	los nodos de interaccion con protocolos que tengan secretos, se podrán almacenar a parte para poder ser reutilizados por diferentes nodos/procesos.

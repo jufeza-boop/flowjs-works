@@ -1,18 +1,23 @@
 // Package main is the HTTP server entry point for the flowjs-works engine.
 // It exposes a REST API that the Designer UI calls to execute DSL flows,
-// run live node tests, and check service health.
+// run live node tests, check service health, and manage secrets.
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"flowjs-works/engine/internal/engine"
 	"flowjs-works/engine/internal/models"
+	"flowjs-works/engine/internal/secrets"
+
+	_ "github.com/lib/pq"
 )
 
 func main() {
@@ -26,8 +31,28 @@ func main() {
 	}
 	defer executor.Close()
 
+	// Optional: connect to the config DB for secrets management.
+	// When DATABASE_URL is not set the secrets endpoints return 503.
+	var secretStore *secrets.SecretStore
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+		db, dbErr := sql.Open("postgres", dbURL)
+		if dbErr != nil {
+			log.Printf("engine-server: secrets DB unavailable: %v", dbErr)
+		} else {
+			aesKey := aesKeyFromEnv("SECRETS_AES_KEY")
+			store, storeErr := secrets.NewSecretStore(db, aesKey)
+			if storeErr != nil {
+				log.Printf("engine-server: failed to create secret store: %v", storeErr)
+			} else {
+				secretStore = store
+				executor.SetSecretResolver(store)
+				log.Printf("engine-server: DB-backed secret store enabled")
+			}
+		}
+	}
+
 	mux := http.NewServeMux()
-	registerRoutes(mux, executor)
+	registerRoutes(mux, executor, secretStore)
 
 	server := &http.Server{
 		Addr:         httpAddr,
@@ -46,7 +71,7 @@ func main() {
 // Route registration
 // ---------------------------------------------------------------------------
 
-func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor) {
+func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor, store *secrets.SecretStore) {
 	// GET /health — liveness probe
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -177,6 +202,68 @@ func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor) {
 
 		jsonOK(w, map[string]interface{}{"output": output})
 	})
+
+	// ── Secrets API ─────────────────────────────────────────────────────────
+
+	// GET /api/v1/secrets — list secret metadata (no values)
+	// POST /api/v1/secrets — create or update a secret
+	mux.HandleFunc("/api/v1/secrets", func(w http.ResponseWriter, r *http.Request) {
+		if store == nil {
+			jsonError(w, "secrets store not configured (DATABASE_URL missing)", http.StatusServiceUnavailable)
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			list, err := store.List(r.Context())
+			if err != nil {
+				jsonError(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if list == nil {
+				list = []secrets.SecretMeta{}
+			}
+			jsonOK(w, list)
+
+		case http.MethodPost:
+			var input secrets.SecretInput
+			if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+				jsonError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
+				return
+			}
+			if err := store.Upsert(r.Context(), input); err != nil {
+				jsonError(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]string{"id": input.ID, "status": "saved"})
+
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// DELETE /api/v1/secrets/{secretId}
+	mux.HandleFunc("/api/v1/secrets/", func(w http.ResponseWriter, r *http.Request) {
+		if store == nil {
+			jsonError(w, "secrets store not configured (DATABASE_URL missing)", http.StatusServiceUnavailable)
+			return
+		}
+		if r.Method != http.MethodDelete {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		secretID := strings.TrimPrefix(r.URL.Path, "/api/v1/secrets/")
+		if secretID == "" {
+			jsonError(w, "secret id is required", http.StatusBadRequest)
+			return
+		}
+		if err := store.Delete(r.Context(), secretID); err != nil {
+			jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -187,7 +274,7 @@ func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor) {
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -227,4 +314,18 @@ func parseDurationEnv(key string, def time.Duration) time.Duration {
 		return def
 	}
 	return d
+}
+
+// aesKeyFromEnv reads a 32-byte AES key from the SECRETS_AES_KEY environment
+// variable. When the variable is absent or too short, a fixed development key is
+// used. Production deployments MUST set SECRETS_AES_KEY to a random 32-byte value.
+func aesKeyFromEnv(envKey string) []byte {
+	v := os.Getenv(envKey)
+	if len(v) >= 32 {
+		return []byte(v[:32])
+	}
+	// Dev fallback — never use in production
+	const devKey = "flowjs-dev-key-00000000000000000"
+	log.Printf("engine-server: WARNING — using insecure dev AES key; set %s in production", envKey)
+	return []byte(devKey[:32])
 }
