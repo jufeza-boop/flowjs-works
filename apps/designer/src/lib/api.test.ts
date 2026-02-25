@@ -136,7 +136,7 @@ describe('runFlow', () => {
     const result = await runFlow({
       dsl: {
         definition: { id: 'test', version: '1.0.0', name: 'Test', description: '', settings: { persistence: 'full', timeout: 30000, error_strategy: 'stop_and_rollback' } },
-        trigger: { id: 'trg_01', type: 'http_webhook', config: {} },
+        trigger: { id: 'trg_01', type: 'http_webhook' as 'rest', config: {} as never },
         nodes: [],
         transitions: [],
       },
@@ -160,7 +160,7 @@ describe('runFlow', () => {
       runFlow({
         dsl: {
           definition: { id: 'test', version: '1.0.0', name: 'Test', description: '', settings: { persistence: 'full', timeout: 30000, error_strategy: 'stop_and_rollback' } },
-          trigger: { id: 'trg_01', type: 'http_webhook', config: {} },
+          trigger: { id: 'trg_01', type: 'http_webhook' as 'rest', config: {} as never },
           nodes: [],
           transitions: [],
         },

@@ -24,7 +24,7 @@ describe('serializeGraph', () => {
           id: 'trg_01',
           type: 'http_webhook',
           config: { path: '/v1/register', method: 'POST' },
-        },
+        } as unknown as NodeData,
       },
       {
         id: 'script_01',
@@ -37,7 +37,7 @@ describe('serializeGraph', () => {
           description: 'Normalize data',
           input_mapping: { raw_data: '$.trigger.body' },
           script: 'export default (input) => input',
-        },
+        } as unknown as NodeData,
       },
       {
         id: 'db_01',
@@ -50,7 +50,7 @@ describe('serializeGraph', () => {
           description: 'Insert user',
           config: { datasource: 'postgres_main', table: 'users' },
           input_mapping: { fields: '$.nodes.script_01.output' },
-        },
+        } as unknown as NodeData,
       },
     ]
 
@@ -72,7 +72,7 @@ describe('serializeGraph', () => {
     // trigger is correctly extracted
     expect(dsl.trigger.id).toBe('trg_01')
     expect(dsl.trigger.type).toBe('http_webhook')
-    expect(dsl.trigger.config.path).toBe('/v1/register')
+    expect((dsl.trigger.config as { path: string }).path).toBe('/v1/register')
 
     // process nodes are serialized
     expect(dsl.nodes).toHaveLength(2)
@@ -102,7 +102,7 @@ describe('serializeGraph', () => {
           id: 'n1',
           type: 'script_ts',
           description: 'Script',
-        },
+        } as unknown as NodeData,
       },
     ]
     const dsl = serializeGraph(nodes, [], testDefinition)
@@ -133,7 +133,7 @@ describe('serializeGraph', () => {
             email: '$.trigger.body.email',
             ts: '$.trigger.headers.date',
           },
-        },
+        } as unknown as NodeData,
       },
     ]
     const dsl = serializeGraph(nodes, [], testDefinition)
@@ -160,7 +160,7 @@ describe('serializeGraph', () => {
             timeout: 30,
             headers: { Accept: 'application/json' },
           },
-        },
+        } as unknown as NodeData,
       },
     ]
     const dsl = serializeGraph(nodes, [], testDefinition)
@@ -173,5 +173,48 @@ describe('serializeGraph', () => {
       timeout: 30,
       headers: { Accept: 'application/json' },
     })
+  })
+
+  it('includes type field in all transitions', () => {
+    const nodes: Node<NodeData>[] = [
+      {
+        id: 'trg_01',
+        type: 'triggerNode',
+        position: { x: 0, y: 0 },
+        data: {
+          nodeKind: 'trigger',
+          id: 'trg_01',
+          type: 'rest',
+          config: { path: '/v1/flow', method: 'POST' },
+        },
+      },
+      {
+        id: 'n1',
+        type: 'activityNode',
+        position: { x: 200, y: 0 },
+        data: { nodeKind: 'process', id: 'n1', type: 'http', description: 'HTTP call' },
+      },
+      {
+        id: 'n2',
+        type: 'activityNode',
+        position: { x: 400, y: 0 },
+        data: { nodeKind: 'process', id: 'n2', type: 'log', description: 'Log' },
+      },
+    ]
+
+    const edges: Edge[] = [
+      { id: 'e1', source: 'n1', target: 'n2', data: { transitionType: 'success' } },
+      { id: 'e2', source: 'n2', target: 'n1', data: { transitionType: 'error' } },
+    ]
+
+    const dsl = serializeGraph(nodes, edges, testDefinition)
+    expect(dsl.transitions).toHaveLength(2)
+    expect(dsl.transitions[0]).toMatchObject({ from: 'n1', to: 'n2', type: 'success' })
+    expect(dsl.transitions[1]).toMatchObject({ from: 'n2', to: 'n1', type: 'error' })
+  })
+
+  it('uses rest as default trigger type', () => {
+    const dsl = serializeGraph([], [], testDefinition)
+    expect(dsl.trigger.type).toBe('rest')
   })
 })

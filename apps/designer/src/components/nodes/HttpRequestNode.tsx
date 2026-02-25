@@ -35,8 +35,8 @@ const HttpRequestNode = memo(({ id, data, selected }: NodeProps) => {
         <p className="text-xs font-medium text-gray-700 truncate">
           {processData?.id ?? 'http_node'}
         </p>
-        {processData?.config?.url && (
-          <p className="text-xs text-gray-400 truncate">{processData.config.url}</p>
+        {Boolean((processData?.config as unknown as Record<string, unknown>)?.url) && (
+          <p className="text-xs text-gray-400 truncate">{String((processData!.config as unknown as Record<string, unknown>).url)}</p>
         )}
       </div>
       <Handle type="target" position={Position.Left} className="!bg-blue-400" />

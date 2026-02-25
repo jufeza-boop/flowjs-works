@@ -6,8 +6,10 @@ import { DesignerCanvas } from './components/DesignerCanvas'
 import { ConfigPanel } from './components/ConfigPanel'
 import { ExportButton } from './components/ExportButton'
 import { ExecutionHistory } from './components/ExecutionHistory'
+import { DebugPanel } from './components/DebugPanel'
 import { serializeGraph } from './lib/serializer'
 import { runFlow } from './lib/api'
+import type { RunFlowResponse } from './lib/api'
 import type { NodeData, DesignerNode } from './types/designer'
 import type { FlowDefinition } from './types/dsl'
 
@@ -32,7 +34,8 @@ export default function App() {
   const [nodes, setNodes] = useState<Node<NodeData>[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
   const [runLoading, setRunLoading] = useState(false)
-  const [runResult, setRunResult] = useState<string | null>(null)
+  const [runFlowResult, setRunFlowResult] = useState<RunFlowResponse | null>(null)
+  const [runRawResult, setRunRawResult] = useState<string | null>(null)
   const [runError, setRunError] = useState<string | null>(null)
 
   const handleNodeUpdate = useCallback(
@@ -58,18 +61,38 @@ export default function App() {
 
   const handleRunFlow = useCallback(async () => {
     setRunLoading(true)
-    setRunResult(null)
+    setRunFlowResult(null)
+    setRunRawResult(null)
     setRunError(null)
     try {
       const dsl = serializeGraph(nodes, edges, DEFAULT_DEFINITION)
       const result = await runFlow({ dsl })
-      setRunResult(JSON.stringify(result, null, 2))
+      // Normalize the engine's `nodes` map into a flat `node_results` array for DebugPanel.
+      // The engine returns nodes as Record<nodeId, {output, status}> — never as node_results.
+      if (!result.node_results?.length && result.nodes) {
+        result.node_results = Object.entries(result.nodes).map(([nodeId, nodeData]) => ({
+          node_id: nodeId,
+          status: (nodeData.status as string) ?? 'unknown',
+          output: nodeData.output as Record<string, unknown> | undefined,
+        }))
+      }
+      setRunFlowResult(result)
+      // Fallback raw text only when the nodes map is also empty
+      if (!result.node_results?.length) {
+        setRunRawResult(JSON.stringify(result, null, 2))
+      }
     } catch (err) {
       setRunError(err instanceof Error ? err.message : String(err))
     } finally {
       setRunLoading(false)
     }
   }, [nodes, edges])
+
+  const handleCloseDebug = useCallback(() => {
+    setRunFlowResult(null)
+    setRunRawResult(null)
+    setRunError(null)
+  }, [])
 
   return (
     <div className="h-screen w-screen flex flex-col bg-white overflow-hidden">
@@ -78,7 +101,6 @@ export default function App() {
         <div className="flex items-center gap-3">
           <span className="text-xl font-bold text-blue-600">flowjs</span>
           <span className="text-gray-300">|</span>
-          {/* View switcher */}
           <nav className="flex gap-1">
             <button
               onClick={() => setView('designer')}
@@ -120,17 +142,12 @@ export default function App() {
         {view === 'designer' ? (
           <>
             <ReactFlowProvider>
-              {/* Left: Node Palette */}
               <NodePalette />
-
-              {/* Center: React Flow Canvas */}
               <DesignerCanvas
                 onSelectionChange={setSelectedNode}
                 onNodesChange={setNodes}
                 onEdgesChange={setEdges}
               />
-
-              {/* Right: Config Panel */}
               <ConfigPanel selectedNode={selectedNode} onNodeUpdate={handleNodeUpdate} allNodes={nodes as DesignerNode[]} />
             </ReactFlowProvider>
           </>
@@ -139,21 +156,24 @@ export default function App() {
         )}
       </main>
 
-      {/* Run Flow result toast */}
-      {(runResult || runError) && (
+      {/* Run error toast */}
+      {runError && (
         <div
           role="alert"
           aria-live="polite"
           className="fixed bottom-4 right-4 z-50 w-96 max-h-72 flex flex-col rounded-lg shadow-xl overflow-hidden border"
         >
-          <div className={`flex items-center justify-between px-3 py-2 text-xs font-semibold text-white ${runError ? 'bg-red-600' : 'bg-green-600'}`}>
-            <span>{runError ? '✕ Flow execution failed' : '✓ Flow executed successfully'}</span>
-            <button onClick={() => { setRunResult(null); setRunError(null) }} className="hover:opacity-75" aria-label="Dismiss">×</button>
+          <div className="flex items-center justify-between px-3 py-2 text-xs font-semibold text-white bg-red-600">
+            <span>✕ Flow execution failed</span>
+            <button onClick={handleCloseDebug} className="hover:opacity-75" aria-label="Dismiss">×</button>
           </div>
-          <pre className="flex-1 overflow-auto p-3 text-[10px] font-mono bg-gray-900 text-green-400">
-            {runError ?? runResult}
-          </pre>
+          <pre className="flex-1 overflow-auto p-3 text-[10px] font-mono bg-gray-900 text-red-400">{runError}</pre>
         </div>
+      )}
+
+      {/* Debug panel for successful runs */}
+      {!runError && (
+        <DebugPanel result={runFlowResult} rawResult={runRawResult} onClose={handleCloseDebug} />
       )}
     </div>
   )

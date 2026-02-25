@@ -12,6 +12,10 @@ export interface LiveTestRequest {
   input_mapping: InputMapping
   script?: string
   input_payload: Record<string, unknown>
+  /** The DSL node type to execute (e.g. 'log', 'http', 'sql'). Defaults to 'logger' when absent. */
+  node_type?: string
+  /** Node config forwarded verbatim to the activity (e.g. {level, message} for log nodes). */
+  config?: Record<string, unknown>
 }
 
 /** Response from the engine live-test endpoint */
@@ -50,10 +54,19 @@ export interface NodeResult {
   status?: string
 }
 
+/** Flat node result item in the node_results array */
+export interface NodeResultItem {
+  node_id: string
+  status: string
+  output?: Record<string, unknown>
+}
+
 /** Response from the engine run-flow endpoint */
 export interface RunFlowResponse {
   execution_id: string
   nodes: Record<string, NodeResult>
+  /** Flat array of per-node execution results (used by DebugPanel) */
+  node_results?: NodeResultItem[]
   error?: string
 }
 

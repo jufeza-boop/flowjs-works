@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { buildInputMapping, buildSourceFields, objectToSchemaFields } from './mapper'
 import type { MappingConnection, SchemaField } from '../types/mapper'
 import type { DesignerNode } from '../types/designer'
+import type { NodeData } from '../types/designer'
 
 // ---------------------------------------------------------------------------
 // buildInputMapping
@@ -63,7 +64,7 @@ describe('buildSourceFields', () => {
     id,
     type: 'scriptNode',
     position: { x: 0, y: 0 },
-    data: { nodeKind: 'process', id, type: 'script_ts' },
+    data: { nodeKind: 'process', id, type: 'script_ts' } as unknown as NodeData,
   })
 
   it('always includes trigger fields', () => {
@@ -105,7 +106,7 @@ describe('buildSourceFields', () => {
       id: 'trg_01',
       type: 'triggerNode',
       position: { x: 0, y: 0 },
-      data: { nodeKind: 'trigger', id: 'trg_01', type: 'http_webhook', config: {} },
+      data: { nodeKind: 'trigger', id: 'trg_01', type: 'http_webhook' as 'rest', config: {} as never },
     }
     const fields = buildSourceFields([triggerNode], 'current')
     // Only the hardcoded trigger field — the trigger DesignerNode should not add a duplicate
@@ -167,7 +168,7 @@ describe('round-trip: buildSourceFields -> buildInputMapping', () => {
         id: 'map_01',
         type: 'scriptNode',
         position: { x: 0, y: 0 },
-        data: { nodeKind: 'process', id: 'map_01', type: 'script_ts' },
+        data: { nodeKind: 'process', id: 'map_01', type: 'script_ts' } as unknown as NodeData,
       },
     ]
     const sourceFields = buildSourceFields(nodes, 'current_node')
