@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useReactFlow } from '@xyflow/react'
-import type { DesignerNode } from '../types/designer'
+import type { DesignerNode, NodeData } from '../types/designer'
 import type { SchemaField } from '../types/mapper'
 import type { InputMapping, HttpNodeConfig } from '../types/dsl'
 import { buildSourceFields } from '../lib/mapper'
@@ -60,10 +60,10 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
     const selectedNodeId = selectedNode.id
     setNodes((nds) => nds.map((node) =>
       node.id === selectedNodeId
-        ? { ...node, data: { ...node.data, config: updatedConfig } }
+        ? { ...node, data: { ...node.data, config: updatedConfig } as unknown as NodeData }
         : node
     ))
-    onNodeUpdate(selectedNodeId, { ...selectedNode.data, config: updatedConfig })
+    onNodeUpdate(selectedNodeId, { ...selectedNode.data, config: updatedConfig } as Partial<NodeData>)
   }, [selectedNode, setNodes, onNodeUpdate])
 
   const syncHeaders = useCallback((rows: Array<{ key: string; value: string }>) => {
@@ -73,7 +73,7 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
       return acc
     }, {})
     const currentConfig = (selectedNode.data.config as HttpNodeConfig) || {}
-    updateNodeConfigCentralized({ ...currentConfig, headers } as Record<string, unknown>)
+    updateNodeConfigCentralized({ ...(currentConfig as unknown as Record<string, unknown>), headers } as Record<string, unknown>)
   }, [selectedNode, updateNodeConfigCentralized])
 
   if (!selectedNode) {
@@ -98,9 +98,9 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
   }
 
   const handleScriptChange = (value: string) => {
-    if (data.nodeKind === 'process' && (data.type === 'script_ts' || data.type === 'code')) {
+    if (data.nodeKind === 'process' && ((data.type as string) === 'script_ts' || data.type === 'code')) {
       if (data.type === 'code') {
-        const currentConfig = (data.config as Record<string, unknown>) || {}
+        const currentConfig = (data.config as unknown as Record<string, unknown>) || {}
         updateNodeConfigCentralized({ ...currentConfig, script: value })
       } else {
         updateNodeDataCentralized({ script: value })
@@ -153,14 +153,14 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
 
   const handleConfigFieldChange = (field: string, value: unknown) => {
     if (data.nodeKind !== 'process') return
-    const currentConfig = (data.config as Record<string, unknown>) || {}
+    const currentConfig = (data.config as unknown as Record<string, unknown>) || {}
     updateNodeConfigCentralized({ ...currentConfig, [field]: value })
   }
 
   const handleTriggerConfigChange = (field: string, value: unknown) => {
     if (data.nodeKind !== 'trigger') return
-    const currentConfig = (data.config as Record<string, unknown>) || {}
-    updateNodeDataCentralized({ config: { ...currentConfig, [field]: value } })
+    const currentConfig = (data.config as unknown as Record<string, unknown>) || {}
+    updateNodeDataCentralized({ config: { ...currentConfig, [field]: value } as never })
   }
 
   const handleLiveTest = async () => {
@@ -170,10 +170,10 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
     setLiveTestError(null)
     try {
       const parsedInput = JSON.parse(liveTestInput) as Record<string, unknown>
-      const script = data.type === 'script_ts'
+      const script = (data.type as string) === 'script_ts'
         ? (data.script as string || '')
-        : data.type === 'code'
-          ? ((data.config as Record<string, unknown>)?.script as string || '')
+        : (data.type as string) === 'code'
+          ? ((data.config as unknown as Record<string, unknown>)?.script as string || '')
           : undefined
       const result = await liveTest({
         input_mapping: data.input_mapping || {},
@@ -192,14 +192,14 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
   const targetKeys = data.nodeKind === 'process' ? Object.keys(data.input_mapping || {}) : []
 
   const cfg = (data.nodeKind === 'process' || data.nodeKind === 'trigger')
-    ? (data.config as Record<string, unknown>) || {}
+    ? (data.config as unknown as Record<string, unknown>) || {}
     : {}
 
   const needsSecretRef = data.nodeKind === 'process' && NODES_WITH_SECRET.includes(data.type as string)
-  const currentScript = data.nodeKind === 'process' && data.type === 'script_ts'
+  const currentScript = data.nodeKind === 'process' && (data.type as string) === 'script_ts'
     ? (data.script as string || '')
-    : data.nodeKind === 'process' && data.type === 'code'
-      ? ((data.config as Record<string, unknown>)?.script as string || '')
+    : data.nodeKind === 'process' && (data.type as string) === 'code'
+      ? ((data.config as unknown as Record<string, unknown>)?.script as string || '')
       : ''
 
   const inputClass = "w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
@@ -536,7 +536,7 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
           )}
 
           {/* Code / script_ts node config */}
-          {data.nodeKind === 'process' && (data.type === 'code' || data.type === 'script_ts') && (
+          {data.nodeKind === 'process' && ((data.type as string) === 'code' || (data.type as string) === 'script_ts') && (
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className={labelClass}>Script</label>
@@ -607,7 +607,7 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
         </div>
       )}
 
-      {showMonaco && data.nodeKind === 'process' && (data.type === 'script_ts' || data.type === 'code') && (
+      {showMonaco && data.nodeKind === 'process' && ((data.type as string) === 'script_ts' || data.type === 'code') && (
         <MonacoModal value={currentScript} onSave={handleMonacoSave} onClose={() => setShowMonaco(false)} />
       )}
     </>

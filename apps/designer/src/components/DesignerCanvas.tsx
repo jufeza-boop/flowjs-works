@@ -46,11 +46,11 @@ function buildDefaultData(type: NodeTypeKey, id: string): NodeData {
     trg_soap:     { type: 'soap',     config: { path: '/ws/flow' } },
     trg_rabbitmq: { type: 'rabbitmq', config: { url_amqp: 'amqp://localhost', queue: 'flow-queue' } },
     trg_mcp:      { type: 'mcp',      config: { version: '1.0' } },
-    trg_manual:   { type: 'manual',   config: {} },
+    trg_manual:   { type: 'manual',   config: {} as never },
   }
   if (type in triggerMap) {
     const t = triggerMap[type as PaletteTriggerKey]
-    return { nodeKind: 'trigger', id, type: t.type, config: t.config }
+    return { nodeKind: 'trigger', id, type: t.type, config: t.config } as unknown as NodeData
   }
   const baseProcess = { nodeKind: 'process' as const, id }
   const activityDefaults: Record<NodeType, object> = {
@@ -71,7 +71,7 @@ function buildDefaultData(type: NodeTypeKey, id: string): NodeData {
     type: type as NodeType,
     description: '',
     config: activityDefaults[type as NodeType] ?? {},
-  }
+  } as unknown as NodeData
 }
 
 const initialNodes: Node<NodeData>[] = [

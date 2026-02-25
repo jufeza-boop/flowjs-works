@@ -43,11 +43,11 @@ const TriggerNode = memo(({ id, data, selected }: NodeProps) => {
       </div>
       <div className="px-3 py-2">
         <p className="text-xs font-medium text-gray-700 truncate">{id}</p>
-        {triggerData?.config && (triggerData.config as Record<string, unknown>).path && (
-          <p className="text-xs text-gray-400 truncate">{String((triggerData.config as Record<string, unknown>).path)}</p>
+        {Boolean((triggerData?.config as Record<string, unknown> | undefined)?.path) && (
+          <p className="text-xs text-gray-400 truncate">{String((triggerData!.config as Record<string, unknown>).path)}</p>
         )}
-        {triggerData?.config && (triggerData.config as Record<string, unknown>).expression && (
-          <p className="text-xs text-gray-400 truncate font-mono">{String((triggerData.config as Record<string, unknown>).expression)}</p>
+        {Boolean((triggerData?.config as Record<string, unknown> | undefined)?.expression) && (
+          <p className="text-xs text-gray-400 truncate font-mono">{String((triggerData!.config as Record<string, unknown>).expression)}</p>
         )}
       </div>
       <Handle type="source" position={Position.Right} className="!bg-green-500" />

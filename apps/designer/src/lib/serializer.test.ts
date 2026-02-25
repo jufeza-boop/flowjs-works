@@ -24,7 +24,7 @@ describe('serializeGraph', () => {
           id: 'trg_01',
           type: 'http_webhook',
           config: { path: '/v1/register', method: 'POST' },
-        },
+        } as unknown as NodeData,
       },
       {
         id: 'script_01',
@@ -37,7 +37,7 @@ describe('serializeGraph', () => {
           description: 'Normalize data',
           input_mapping: { raw_data: '$.trigger.body' },
           script: 'export default (input) => input',
-        },
+        } as unknown as NodeData,
       },
       {
         id: 'db_01',
@@ -50,7 +50,7 @@ describe('serializeGraph', () => {
           description: 'Insert user',
           config: { datasource: 'postgres_main', table: 'users' },
           input_mapping: { fields: '$.nodes.script_01.output' },
-        },
+        } as unknown as NodeData,
       },
     ]
 
@@ -72,7 +72,7 @@ describe('serializeGraph', () => {
     // trigger is correctly extracted
     expect(dsl.trigger.id).toBe('trg_01')
     expect(dsl.trigger.type).toBe('http_webhook')
-    expect(dsl.trigger.config.path).toBe('/v1/register')
+    expect((dsl.trigger.config as { path: string }).path).toBe('/v1/register')
 
     // process nodes are serialized
     expect(dsl.nodes).toHaveLength(2)
@@ -102,7 +102,7 @@ describe('serializeGraph', () => {
           id: 'n1',
           type: 'script_ts',
           description: 'Script',
-        },
+        } as unknown as NodeData,
       },
     ]
     const dsl = serializeGraph(nodes, [], testDefinition)
@@ -133,7 +133,7 @@ describe('serializeGraph', () => {
             email: '$.trigger.body.email',
             ts: '$.trigger.headers.date',
           },
-        },
+        } as unknown as NodeData,
       },
     ]
     const dsl = serializeGraph(nodes, [], testDefinition)
@@ -160,7 +160,7 @@ describe('serializeGraph', () => {
             timeout: 30,
             headers: { Accept: 'application/json' },
           },
-        },
+        } as unknown as NodeData,
       },
     ]
     const dsl = serializeGraph(nodes, [], testDefinition)
