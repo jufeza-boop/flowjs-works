@@ -1,0 +1,478 @@
+openapi: "3.0.3"
+info:
+  title: flowjs-works Manager API
+  description: |
+    Control Plane API for managing processes, deployments, secrets, and
+    querying execution history in the flowjs-works iPaaS platform.
+  version: "0.1.0"
+
+servers:
+  - url: http://localhost:9090
+    description: Local development (engine)
+  - url: http://localhost:8080
+    description: Local development (audit-logger)
+
+tags:
+  - name: Processes
+    description: CRUD operations on flow definitions (JSON DSL)
+  - name: Deployments
+    description: Deploy, stop, and inspect running flows
+  - name: Secrets
+    description: Manage credentials referenced by nodes
+  - name: Executions
+    description: Query audit history and replay flows
+
+paths:
+  # ── Processes ──────────────────────────────────────────────────────────
+  /api/v1/processes:
+    get:
+      tags: [Processes]
+      summary: List all saved processes
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, deployed, stopped]
+      responses:
+        "200":
+          description: Array of process summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProcessSummary"
+    post:
+      tags: [Processes]
+      summary: Create or update a process (upsert by definition.id)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FlowDSL"
+      responses:
+        "201":
+          description: Process saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessSummary"
+
+  /api/v1/processes/{processId}:
+    get:
+      tags: [Processes]
+      summary: Get full DSL for a process
+      parameters:
+        - $ref: "#/components/parameters/processId"
+      responses:
+        "200":
+          description: Full FlowDSL document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlowDSL"
+        "404":
+          description: Process not found
+    delete:
+      tags: [Processes]
+      summary: Delete a process
+      parameters:
+        - $ref: "#/components/parameters/processId"
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Deployments ────────────────────────────────────────────────────────
+  /api/v1/processes/{processId}/deploy:
+    post:
+      tags: [Deployments]
+      summary: Deploy a process (start its triggers)
+      parameters:
+        - $ref: "#/components/parameters/processId"
+      responses:
+        "200":
+          description: Deployment status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentStatus"
+
+  /api/v1/processes/{processId}/stop:
+    post:
+      tags: [Deployments]
+      summary: Stop a deployed process
+      parameters:
+        - $ref: "#/components/parameters/processId"
+      responses:
+        "200":
+          description: Stopped
+
+  # ── Secrets ────────────────────────────────────────────────────────────
+  /api/v1/secrets:
+    get:
+      tags: [Secrets]
+      summary: List secrets (metadata only, no values)
+      responses:
+        "200":
+          description: Array of secret metadata
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SecretMeta"
+    post:
+      tags: [Secrets]
+      summary: Create or update a secret
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SecretInput"
+      responses:
+        "201":
+          description: Secret saved
+
+  /api/v1/secrets/{secretId}:
+    delete:
+      tags: [Secrets]
+      summary: Delete a secret
+      parameters:
+        - name: secretId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Executions (Audit) ─────────────────────────────────────────────────
+  /api/v1/executions:
+    get:
+      tags: [Executions]
+      summary: List executions (paginated)
+      parameters:
+        - name: flow_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [STARTED, COMPLETED, FAILED, REPLAYED]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Paginated list of executions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Execution"
+
+  /api/v1/executions/{executionId}/logs:
+    get:
+      tags: [Executions]
+      summary: Get activity logs for an execution
+      parameters:
+        - name: executionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Activity logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityLog"
+
+  # ── Engine: Execute DSL directly ───────────────────────────────────────
+  /api/v1/execute:
+    post:
+      tags: [Processes]
+      summary: Execute a DSL document inline (debug / live test)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [process, trigger_data]
+              properties:
+                process:
+                  $ref: "#/components/schemas/FlowDSL"
+                trigger_data:
+                  type: object
+      responses:
+        "200":
+          description: Execution result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionResult"
+
+# ═══════════════════════════════════════════════════════════════════════════
+components:
+  parameters:
+    processId:
+      name: processId
+      in: path
+      required: true
+      schema:
+        type: string
+
+  schemas:
+    # ── DSL top-level ────────────────────────────────────────────────────
+    FlowDSL:
+      type: object
+      required: [definition, trigger, nodes, transitions]
+      properties:
+        definition:
+          $ref: "#/components/schemas/FlowDefinition"
+        trigger:
+          $ref: "#/components/schemas/FlowTrigger"
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/FlowNode"
+        transitions:
+          type: array
+          items:
+            $ref: "#/components/schemas/FlowTransition"
+
+    FlowDefinition:
+      type: object
+      required: [id, version, name, settings]
+      properties:
+        id:
+          type: string
+        version:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        settings:
+          $ref: "#/components/schemas/FlowSettings"
+
+    FlowSettings:
+      type: object
+      properties:
+        persistence:
+          type: string
+          enum: [full, minimal, none]
+        timeout:
+          type: integer
+        error_strategy:
+          type: string
+          enum: [stop_and_rollback, continue, retry]
+
+    FlowTrigger:
+      type: object
+      required: [id, type, config]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [cron, rest, soap, rabbitmq, mcp, manual]
+        config:
+          type: object
+
+    FlowNode:
+      type: object
+      required: [id, type]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum:
+            - http
+            - sftp
+            - s3
+            - smb
+            - mail
+            - rabbitmq
+            - sql
+            - code
+            - log
+            - transform
+            - file
+        description:
+          type: string
+        input_mapping:
+          type: object
+          additionalProperties:
+            type: string
+        config:
+          type: object
+        secret_ref:
+          type: string
+        retry_policy:
+          $ref: "#/components/schemas/RetryPolicy"
+
+    FlowTransition:
+      type: object
+      required: [from, to, type]
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        type:
+          type: string
+          enum: [success, error, condition, nocondition]
+        condition:
+          type: string
+
+    RetryPolicy:
+      type: object
+      properties:
+        max_attempts:
+          type: integer
+        interval:
+          type: string
+        type:
+          type: string
+          enum: [fixed, exponential]
+
+    # ── API response schemas ─────────────────────────────────────────────
+    ProcessSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        version:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+
+    DeploymentStatus:
+      type: object
+      properties:
+        process_id:
+          type: string
+        status:
+          type: string
+          enum: [deployed, stopped, error]
+        message:
+          type: string
+
+    SecretMeta:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    SecretInput:
+      type: object
+      required: [id, name, type, value]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [basic_auth, token, certificate, connection_string]
+        value:
+          type: object
+        metadata:
+          type: object
+
+    Execution:
+      type: object
+      properties:
+        execution_id:
+          type: string
+          format: uuid
+        flow_id:
+          type: string
+        version:
+          type: string
+        status:
+          type: string
+        correlation_id:
+          type: string
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        trigger_type:
+          type: string
+        main_error_message:
+          type: string
+
+    ActivityLog:
+      type: object
+      properties:
+        log_id:
+          type: integer
+        execution_id:
+          type: string
+          format: uuid
+        node_id:
+          type: string
+        node_type:
+          type: string
+        status:
+          type: string
+        input_data:
+          type: object
+        output_data:
+          type: object
+        error_details:
+          type: object
+        duration_ms:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    ExecutionResult:
+      type: object
+      properties:
+        execution_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        nodes:
+          type: object
+          additionalProperties:
+            type: object

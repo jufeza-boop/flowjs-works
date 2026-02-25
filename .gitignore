@@ -2,3 +2,4 @@
 *.env
 flowjs-works.code-workspace
 .vscode/launch.json
+node_modules/

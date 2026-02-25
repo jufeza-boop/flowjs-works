@@ -2,6 +2,8 @@
 
 Este documento define las reglas de oro y estándares de calidad que todo agente de IA debe seguir al generar código para el ecosistema **flowjs-works**.
 
+> 📚 **Extended knowledge base**: See `context/` folder for detailed architecture rules, DB schema, API specs, and DSL reference.
+
 ## 1. Contexto del Proyecto
 **flowjs-works** es una plataforma iPaaS de alto rendimiento diseñada para sustituir herramientas legacy (como TIBCO BW) mediante una arquitectura ligera de microservicios basada en JSON.
 

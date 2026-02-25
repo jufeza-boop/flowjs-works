@@ -1,5 +1,5 @@
 import type { Node, Edge } from '@xyflow/react'
-import type { FlowNode, FlowTrigger } from './dsl'
+import type { FlowNode, FlowTrigger, NodeType, TriggerType } from './dsl'
 
 /** Data stored in each React Flow node — must satisfy Record<string, unknown> for @xyflow/react */
 export type NodeData = Record<string, unknown> & (
@@ -13,8 +13,8 @@ export type DesignerNode = Node<NodeData>
 /** React Flow edge (standard) */
 export type DesignerEdge = Edge
 
-/** Node type keys used in the palette */
-export type NodeTypeKey = 'trigger' | 'script_ts' | 'http_request' | 'sql_insert'
+/** Node type keys used in the palette (trigger types + node types) */
+export type NodeTypeKey = TriggerType | NodeType
 
 /** Palette item definition */
 export interface PaletteItem {
