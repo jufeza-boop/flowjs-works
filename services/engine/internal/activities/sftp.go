@@ -244,26 +244,37 @@ func uploadFile(client *sftp.Client, localPath, remotePath string) error {
 	return nil
 }
 
-// buildSSHClientConfig builds an ssh.ClientConfig from the activity config's auth map.
-// auth map keys: user (string), password (string), private_key (PEM string).
+// buildSSHClientConfig builds an ssh.ClientConfig from the activity config.
+// Credentials are read from config["auth"] (nested map) when present, or from
+// flat top-level keys (user, password, private_key) injected by the secret resolver.
 func buildSSHClientConfig(config map[string]interface{}) (*ssh.ClientConfig, error) {
 	user := "anonymous"
 	var authMethods []ssh.AuthMethod
 
-	if authMap, ok := config["auth"].(map[string]interface{}); ok {
-		if u, ok := authMap["user"].(string); ok && u != "" {
-			user = u
-		}
-		if pk, ok := authMap["private_key"].(string); ok && pk != "" {
-			signer, err := ssh.ParsePrivateKey([]byte(pk))
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse private_key: %w", err)
+	// getCredential checks the nested auth map first, then falls back to flat config keys
+	// so that both explicit config["auth"] and secret-injected flat keys work.
+	getCredential := func(key string) string {
+		if authMap, ok := config["auth"].(map[string]interface{}); ok {
+			if v, ok := authMap[key].(string); ok {
+				return v
 			}
-			authMethods = append(authMethods, ssh.PublicKeys(signer))
 		}
-		if pass, ok := authMap["password"].(string); ok && pass != "" {
-			authMethods = append(authMethods, ssh.Password(pass))
+		v, _ := config[key].(string)
+		return v
+	}
+
+	if u := getCredential("user"); u != "" {
+		user = u
+	}
+	if pk := getCredential("private_key"); pk != "" {
+		signer, err := ssh.ParsePrivateKey([]byte(pk))
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse private_key: %w", err)
 		}
+		authMethods = append(authMethods, ssh.PublicKeys(signer))
+	}
+	if pass := getCredential("password"); pass != "" {
+		authMethods = append(authMethods, ssh.Password(pass))
 	}
 
 	if len(authMethods) == 0 {
@@ -279,5 +290,3 @@ func buildSSHClientConfig(config map[string]interface{}) (*ssh.ClientConfig, err
 		Timeout:         30 * time.Second,
 	}, nil
 }
-
-

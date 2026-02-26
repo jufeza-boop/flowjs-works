@@ -207,21 +207,32 @@ func s3Put(goCtx context.Context, client *s3.Client, bucket, prefix string, cfg 
 }
 
 // buildS3Client creates an AWS S3 client for the given region.
-// If config["auth"] is provided, static credentials are used; otherwise the
-// default AWS credential chain (env vars, ~/.aws, IAM role, …) is used.
+// Credentials are read from cfg["auth"] (nested map) when present, or from
+// flat top-level keys (access_key_id, secret_access_key, session_token) injected
+// by the secret resolver. If neither is present the default AWS credential chain
+// (env vars, ~/.aws, IAM role, …) is used.
 func buildS3Client(region string, cfg map[string]interface{}) (*s3.Client, error) {
 	var opts []func(*config.LoadOptions) error
 	opts = append(opts, config.WithRegion(region))
 
-	if authMap, ok := cfg["auth"].(map[string]interface{}); ok {
-		accessKey, _ := authMap["access_key_id"].(string)
-		secretKey, _ := authMap["secret_access_key"].(string)
-		sessionToken, _ := authMap["session_token"].(string)
-		if accessKey != "" && secretKey != "" {
-			opts = append(opts, config.WithCredentialsProvider(
-				credentials.NewStaticCredentialsProvider(accessKey, secretKey, sessionToken),
-			))
+	// getCredential checks the nested auth map first, then falls back to flat config keys.
+	getCredential := func(key string) string {
+		if authMap, ok := cfg["auth"].(map[string]interface{}); ok {
+			if v, ok := authMap[key].(string); ok {
+				return v
+			}
 		}
+		v, _ := cfg[key].(string)
+		return v
+	}
+
+	accessKey := getCredential("access_key_id")
+	secretKey := getCredential("secret_access_key")
+	sessionToken := getCredential("session_token")
+	if accessKey != "" && secretKey != "" {
+		opts = append(opts, config.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(accessKey, secretKey, sessionToken),
+		))
 	}
 
 	awsCfg, err := config.LoadDefaultConfig(context.Background(), opts...)

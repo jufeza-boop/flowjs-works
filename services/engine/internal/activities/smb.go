@@ -240,12 +240,21 @@ func smbUploadFile(fs *smb2.Share, localPath, remotePath string) error {
 	return err
 }
 
-// extractSMBAuth reads user / password / domain from config["auth"].
+// extractSMBAuth reads user / password / domain from config.
+// Credentials are read from config["auth"] (nested map) when present, or from
+// flat top-level keys (user, password, domain) injected by the secret resolver.
 func extractSMBAuth(config map[string]interface{}) (user, password, domain string) {
-	if authMap, ok := config["auth"].(map[string]interface{}); ok {
-		user, _ = authMap["user"].(string)
-		password, _ = authMap["password"].(string)
-		domain, _ = authMap["domain"].(string)
+	getCredential := func(key string) string {
+		if authMap, ok := config["auth"].(map[string]interface{}); ok {
+			if v, ok := authMap[key].(string); ok {
+				return v
+			}
+		}
+		v, _ := config[key].(string)
+		return v
 	}
+	user = getCredential("user")
+	password = getCredential("password")
+	domain = getCredential("domain")
 	return user, password, domain
 }
