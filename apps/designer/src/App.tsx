@@ -8,6 +8,7 @@ import { ExportButton } from './components/ExportButton'
 import { ExecutionHistory } from './components/ExecutionHistory'
 import { DebugPanel } from './components/DebugPanel'
 import { SecretsManager } from './components/SecretsManager'
+import { ProcessManager } from './components/ProcessManager'
 import { serializeGraph } from './lib/serializer'
 import { runFlow } from './lib/api'
 import type { RunFlowResponse } from './lib/api'
@@ -26,7 +27,7 @@ const DEFAULT_DEFINITION: FlowDefinition = {
   },
 }
 
-type View = 'designer' | 'history' | 'secrets'
+type View = 'designer' | 'history' | 'secrets' | 'deployments'
 
 /** Root application — three-column designer layout or execution history view */
 export default function App() {
@@ -130,6 +131,15 @@ export default function App() {
             >
               🔐 Secrets
             </button>
+            <button
+              onClick={() => setView('deployments')}
+              className={`text-sm px-3 py-1 rounded transition-colors ${view === 'deployments'
+                ? 'bg-blue-50 text-blue-600 font-medium'
+                : 'text-gray-500 hover:text-gray-700'
+                }`}
+            >
+              🚀 Deployments
+            </button>
           </nav>
         </div>
         {view === 'designer' && (
@@ -163,6 +173,8 @@ export default function App() {
           </>
         ) : view === 'history' ? (
           <ExecutionHistory />
+        ) : view === 'deployments' ? (
+          <ProcessManager nodes={nodes} edges={edges} definition={DEFAULT_DEFINITION} />
         ) : (
           <SecretsManager />
         )}

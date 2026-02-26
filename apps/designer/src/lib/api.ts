@@ -1,6 +1,7 @@
 import type { Execution, ActivityLog } from '../types/audit'
 import type { InputMapping, FlowDSL } from '../types/dsl'
 import type { SecretMeta, SecretInput } from '../types/secrets'
+import type { ProcessSummary, DeploymentStatus } from '../types/deployment'
 
 /** Base URL for the audit-logger HTTP API */
 const AUDIT_API_BASE = import.meta.env.VITE_AUDIT_API_URL ?? 'http://localhost:8080'
@@ -142,4 +143,70 @@ export async function deleteSecret(secretId: string): Promise<void> {
     const body = await res.text()
     throw new Error(`Failed to delete secret (${res.status}): ${body}`)
   }
+}
+
+// ── Process & Deployment API ─────────────────────────────────────────────────
+
+/** List all saved processes, optionally filtered by status */
+export async function listProcesses(status?: string): Promise<ProcessSummary[]> {
+  const url = status
+    ? `${ENGINE_API_BASE}/api/v1/processes?status=${encodeURIComponent(status)}`
+    : `${ENGINE_API_BASE}/api/v1/processes`
+  const res = await fetch(url)
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`Failed to list processes (${res.status}): ${body}`)
+  }
+  return res.json() as Promise<ProcessSummary[]>
+}
+
+/** Save (upsert) a flow DSL. Returns the persisted process summary. */
+export async function saveProcess(dsl: FlowDSL): Promise<ProcessSummary> {
+  const res = await fetch(`${ENGINE_API_BASE}/api/v1/processes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(dsl),
+  })
+  const data = await res.json() as ProcessSummary
+  if (!res.ok) {
+    throw new Error(`Failed to save process (${res.status})`)
+  }
+  return data
+}
+
+/** Delete a saved process by id */
+export async function deleteProcess(processId: string): Promise<void> {
+  const res = await fetch(`${ENGINE_API_BASE}/api/v1/processes/${encodeURIComponent(processId)}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`Failed to delete process (${res.status}): ${body}`)
+  }
+}
+
+/** Deploy a process (start its triggers) */
+export async function deployProcess(processId: string): Promise<DeploymentStatus> {
+  const res = await fetch(
+    `${ENGINE_API_BASE}/api/v1/processes/${encodeURIComponent(processId)}/deploy`,
+    { method: 'POST' },
+  )
+  const data = await res.json() as DeploymentStatus
+  if (!res.ok) {
+    throw new Error(`Failed to deploy process (${res.status}): ${JSON.stringify(data)}`)
+  }
+  return data
+}
+
+/** Stop a deployed process */
+export async function stopProcess(processId: string): Promise<DeploymentStatus> {
+  const res = await fetch(
+    `${ENGINE_API_BASE}/api/v1/processes/${encodeURIComponent(processId)}/stop`,
+    { method: 'POST' },
+  )
+  const data = await res.json() as DeploymentStatus
+  if (!res.ok) {
+    throw new Error(`Failed to stop process (${res.status}): ${JSON.stringify(data)}`)
+  }
+  return data
 }
