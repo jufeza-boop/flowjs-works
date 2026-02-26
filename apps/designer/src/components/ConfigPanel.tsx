@@ -440,6 +440,10 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
                 <input type="text" value={(cfg.server as string) || ''} onChange={(e) => handleConfigFieldChange('server', e.target.value)} className={inputClass} placeholder="sftp.example.com" />
               </div>
               <div>
+                <label className={labelClass}>Port</label>
+                <input type="number" min={1} max={65535} value={(cfg.port as number) ?? 22} onChange={(e) => { const n = parseInt(e.target.value, 10); if (!isNaN(n)) handleConfigFieldChange('port', n) }} className={inputClass} />
+              </div>
+              <div>
                 <label className={labelClass}>Folder</label>
                 <input type="text" value={(cfg.folder as string) || ''} onChange={(e) => handleConfigFieldChange('folder', e.target.value)} className={inputClass} placeholder="/files" />
               </div>
@@ -449,6 +453,24 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
                   {['get', 'put'].map((m) => <option key={m}>{m}</option>)}
                 </select>
               </div>
+              {cfg.method === 'get' && (
+                <div>
+                  <label className={labelClass}>Regex Filter</label>
+                  <input type="text" value={(cfg.regex_filter as string) || ''} onChange={(e) => handleConfigFieldChange('regex_filter', e.target.value)} className={inputClass} placeholder=".*\.csv" />
+                </div>
+              )}
+              {cfg.method === 'put' && (
+                <>
+                  <div className="flex items-center gap-2">
+                    <input type="checkbox" id="sftp-overwrite" checked={(cfg.overwrite as boolean) ?? true} onChange={(e) => handleConfigFieldChange('overwrite', e.target.checked)} />
+                    <label htmlFor="sftp-overwrite" className={labelClass + ' mb-0'}>Overwrite existing files</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input type="checkbox" id="sftp-create-folder" checked={(cfg.create_folder as boolean) ?? false} onChange={(e) => handleConfigFieldChange('create_folder', e.target.checked)} />
+                    <label htmlFor="sftp-create-folder" className={labelClass + ' mb-0'}>Create folder if missing</label>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -465,7 +487,7 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
                 <input type="text" value={(cfg.region as string) || ''} onChange={(e) => handleConfigFieldChange('region', e.target.value)} className={inputClass} placeholder="us-east-1" />
               </div>
               <div>
-                <label className={labelClass}>Folder</label>
+                <label className={labelClass}>Folder / Prefix</label>
                 <input type="text" value={(cfg.folder as string) || ''} onChange={(e) => handleConfigFieldChange('folder', e.target.value)} className={inputClass} placeholder="/" />
               </div>
               <div>
@@ -474,6 +496,18 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
                   {['get', 'put'].map((m) => <option key={m}>{m}</option>)}
                 </select>
               </div>
+              {cfg.method === 'get' && (
+                <div>
+                  <label className={labelClass}>Regex Filter</label>
+                  <input type="text" value={(cfg.regex_filter as string) || ''} onChange={(e) => handleConfigFieldChange('regex_filter', e.target.value)} className={inputClass} placeholder=".*\.json" />
+                </div>
+              )}
+              {cfg.method === 'put' && (
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" id="s3-overwrite" checked={(cfg.overwrite as boolean) ?? true} onChange={(e) => handleConfigFieldChange('overwrite', e.target.checked)} />
+                  <label htmlFor="s3-overwrite" className={labelClass + ' mb-0'}>Overwrite existing objects</label>
+                </div>
+              )}
             </div>
           )}
 
@@ -483,7 +517,15 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
               <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider">SMB</label>
               <div>
                 <label className={labelClass}>Server</label>
-                <input type="text" value={(cfg.server as string) || ''} onChange={(e) => handleConfigFieldChange('server', e.target.value)} className={inputClass} placeholder="\\server\share" />
+                <input type="text" value={(cfg.server as string) || ''} onChange={(e) => handleConfigFieldChange('server', e.target.value)} className={inputClass} placeholder="fileserver" />
+              </div>
+              <div>
+                <label className={labelClass}>Port</label>
+                <input type="number" min={1} max={65535} value={(cfg.port as number) ?? 445} onChange={(e) => { const n = parseInt(e.target.value, 10); if (!isNaN(n)) handleConfigFieldChange('port', n) }} className={inputClass} />
+              </div>
+              <div>
+                <label className={labelClass}>Share</label>
+                <input type="text" value={(cfg.share as string) || ''} onChange={(e) => handleConfigFieldChange('share', e.target.value)} className={inputClass} placeholder="shared" />
               </div>
               <div>
                 <label className={labelClass}>Folder</label>
@@ -495,6 +537,18 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
                   {['get', 'put'].map((m) => <option key={m}>{m}</option>)}
                 </select>
               </div>
+              {cfg.method === 'get' && (
+                <div>
+                  <label className={labelClass}>Regex Filter</label>
+                  <input type="text" value={(cfg.regex_filter as string) || ''} onChange={(e) => handleConfigFieldChange('regex_filter', e.target.value)} className={inputClass} placeholder=".*\.xml" />
+                </div>
+              )}
+              {cfg.method === 'put' && (
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" id="smb-overwrite" checked={(cfg.overwrite as boolean) ?? true} onChange={(e) => handleConfigFieldChange('overwrite', e.target.checked)} />
+                  <label htmlFor="smb-overwrite" className={labelClass + ' mb-0'}>Overwrite existing files</label>
+                </div>
+              )}
             </div>
           )}
 

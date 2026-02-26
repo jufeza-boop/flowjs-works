@@ -33,7 +33,10 @@ func NewActivityRegistry() *ActivityRegistry {
 	registry.Register(&SQLActivity{})
 	registry.Register(&MailActivity{})
 	registry.Register(&RabbitMQActivity{})
-	
+	registry.Register(&SFTPActivity{})
+	registry.Register(&S3Activity{})
+	registry.Register(&SMBActivity{})
+
 	return registry
 }
 
