@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"flowjs-works/engine/internal/models"
@@ -111,15 +112,10 @@ func restTriggerConfig(config map[string]interface{}) (path, method string, err 
 // Global REST route registry
 // ---------------------------------------------------------------------------
 
-// RESTRegistry holds dynamically registered REST trigger handlers.
-// The engine's HTTP server delegates to it for /triggers/* paths.
-type RESTRegistry struct {
-	handlers map[string]http.HandlerFunc // key: "METHOD /path"
-	mu       context.Context             // placeholder; use sync.RWMutex directly
-}
-
-// restRegistryImpl is the concrete, mutex-protected implementation.
+// restRegistryImpl is a mutex-protected map of dynamically registered REST
+// trigger handlers. It is safe for concurrent use by multiple goroutines.
 type restRegistryImpl struct {
+	mu       sync.RWMutex
 	handlers map[string]http.HandlerFunc
 }
 
@@ -130,10 +126,14 @@ func newRESTRegistry() *restRegistryImpl {
 var globalRESTRegistry = newRESTRegistry()
 
 func (r *restRegistryImpl) register(path, method string, h http.HandlerFunc) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.handlers[registryKey(path, method)] = h
 }
 
 func (r *restRegistryImpl) deregister(path, method string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	delete(r.handlers, registryKey(path, method))
 }
 
@@ -141,13 +141,15 @@ func (r *restRegistryImpl) deregister(path, method string) {
 // given method+path combination. It is intended to be used inside a catch-all
 // HTTP route like /triggers/{path}.
 func (r *restRegistryImpl) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	r.mu.RLock()
 	key := registryKey(req.URL.Path, req.Method)
 	h, ok := r.handlers[key]
 	if !ok {
 		// Fall back to method-agnostic lookup registered under POST.
-		key = registryKey(req.URL.Path, "POST")
-		h, ok = r.handlers[key]
+		h, ok = r.handlers[registryKey(req.URL.Path, "POST")]
 	}
+	r.mu.RUnlock()
+
 	if !ok {
 		http.Error(w, fmt.Sprintf("no REST trigger registered for %s %s", req.Method, req.URL.Path), http.StatusNotFound)
 		return

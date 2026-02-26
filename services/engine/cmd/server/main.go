@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -21,6 +22,10 @@ import (
 
 	_ "github.com/lib/pq"
 )
+
+// validProcessIDRe ensures process IDs only contain URL-safe alphanumeric
+// characters, hyphens, and underscores, to prevent path traversal or injection.
+var validProcessIDRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,255}$`)
 
 func main() {
 	natsURL := envOrDefault("NATS_URL", "nats://localhost:4222")
@@ -333,6 +338,10 @@ func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor, store 
 		processID := parts[0]
 		if processID == "" {
 			jsonError(w, "process id is required", http.StatusBadRequest)
+			return
+		}
+		if !validProcessIDRe.MatchString(processID) {
+			jsonError(w, "process id must contain only alphanumeric characters, hyphens, and underscores", http.StatusBadRequest)
 			return
 		}
 

@@ -11,7 +11,9 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-// rabbitMQTrigger subscribes to an AMQP queue and fires the process for each
+// consumerDrainTimeout is the time Stop() waits for in-flight deliveries to
+// complete before closing the AMQP connection.
+const consumerDrainTimeout = 100 * time.Millisecond
 // message received. Each delivery is ACKed on successful execution.
 type rabbitMQTrigger struct {
 	executor  Executor
@@ -121,7 +123,7 @@ func (t *rabbitMQTrigger) Stop() error {
 	}
 	if t.conn != nil {
 		// Give the consumer goroutine a short window to drain.
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(consumerDrainTimeout)
 		t.conn.Close()
 		t.conn = nil
 	}

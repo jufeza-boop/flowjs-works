@@ -118,7 +118,9 @@ export function ProcessManager({ nodes, edges, definition }: Props) {
 
   const handleDelete = useCallback(
     async (id: string) => {
-      if (!window.confirm(`Delete process "${id}"? This cannot be undone.`)) return
+      // Truncate the id in the confirmation message to prevent excessively long prompts.
+      const displayId = id.length > 80 ? id.slice(0, 80) + '…' : id
+      if (!window.confirm(`Delete process "${displayId}"? This cannot be undone.`)) return
       setBusyId(id)
       setActionError(null)
       try {

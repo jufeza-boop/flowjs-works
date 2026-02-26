@@ -11,9 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// ---------------------------------------------------------------------------
-// Mock executor for unit tests
-// ---------------------------------------------------------------------------
+// cronTickWaitDuration is the time the cron test waits after starting the
+// scheduler. It must be longer than the cron interval (1s) so at least one
+// execution fires before Stop() is called.
+const cronTickWaitDuration = 1200 * time.Millisecond
 
 type mockExecutor struct {
 	executions []map[string]interface{}
@@ -108,8 +109,8 @@ func TestCronTrigger_StartStop(t *testing.T) {
 	// Use "every second" to verify the scheduler can be started and stopped cleanly.
 	proc := buildProcess("c3", "cron", map[string]interface{}{"expression": "* * * * * *"})
 	require.NoError(t, tr.Start(context.Background(), proc))
-	// Give the scheduler time to potentially fire once.
-	time.Sleep(1200 * time.Millisecond)
+	// Give the scheduler time to fire at least once.
+	time.Sleep(cronTickWaitDuration)
 	require.NoError(t, tr.Stop())
 	assert.GreaterOrEqual(t, len(exec.executions), 1, "expected at least one execution")
 }
