@@ -386,100 +386,123 @@ func TestExecute_CatFactGETFlow(t *testing.T) {
 	assert.NotEmpty(t, fact)
 }
 
-func TestTransition_SuccessPath(t *testing.T) {
-exec := newTestExecutor(t)
-process := models.Process{
-Definition: models.Definition{ID: "trans-p1", Version: "1.0.0", Name: "trans-p1"},
-Trigger:    models.Trigger{ID: "trg", Type: "manual"},
-Nodes: []models.Node{
-{ID: "n1", Type: "logger", Config: map[string]interface{}{"level": "info"}},
-{ID: "n2", Type: "logger", Config: map[string]interface{}{"level": "info"}},
-},
-Transitions: []models.Transition{
-{From: "n1", To: "n2", Type: "success"},
-},
+// TestTransition_TriggerToNode is a regression test for the bug where a
+// trigger→node transition incorrectly blocked the target node from being
+// treated as a start node, causing ctx.Nodes to remain empty.
+func TestTransition_TriggerToNode(t *testing.T) {
+	exec := newTestExecutor(t)
+	process := models.Process{
+		Definition: models.Definition{ID: "trigger-trans", Version: "1.0.0", Name: "trigger-trans"},
+		Trigger:    models.Trigger{ID: "trg_01", Type: "rest"},
+		Nodes: []models.Node{
+			{ID: "log_1", Type: "logger", Config: map[string]interface{}{"level": "info"}},
+		},
+		Transitions: []models.Transition{
+			{From: "trg_01", To: "log_1", Type: "success"},
+		},
+	}
+	data, _ := json.Marshal(process)
+	ctx, err := exec.ExecuteFromJSON(data, map[string]interface{}{})
+	require.NoError(t, err)
+	s1, valErr := ctx.GetValue("$.nodes.log_1.status")
+	require.NoError(t, valErr, "log_1 should have been executed")
+	assert.Equal(t, "success", s1)
 }
-data, _ := json.Marshal(process)
-ctx, err := exec.ExecuteFromJSON(data, map[string]interface{}{})
-require.NoError(t, err)
-s1, _ := ctx.GetValue("$.nodes.n1.status")
-s2, _ := ctx.GetValue("$.nodes.n2.status")
-assert.Equal(t, "success", s1)
-assert.Equal(t, "success", s2)
+
+func TestTransition_SuccessPath(t *testing.T) {
+	exec := newTestExecutor(t)
+	process := models.Process{
+		Definition: models.Definition{ID: "trans-p1", Version: "1.0.0", Name: "trans-p1"},
+		Trigger:    models.Trigger{ID: "trg", Type: "manual"},
+		Nodes: []models.Node{
+			{ID: "n1", Type: "logger", Config: map[string]interface{}{"level": "info"}},
+			{ID: "n2", Type: "logger", Config: map[string]interface{}{"level": "info"}},
+		},
+		Transitions: []models.Transition{
+			{From: "n1", To: "n2", Type: "success"},
+		},
+	}
+	data, _ := json.Marshal(process)
+	ctx, err := exec.ExecuteFromJSON(data, map[string]interface{}{})
+	require.NoError(t, err)
+	s1, _ := ctx.GetValue("$.nodes.n1.status")
+	s2, _ := ctx.GetValue("$.nodes.n2.status")
+	assert.Equal(t, "success", s1)
+	assert.Equal(t, "success", s2)
 }
 
 func TestTransition_ErrorPath(t *testing.T) {
-exec := newTestExecutor(t)
-process := models.Process{
-Definition: models.Definition{ID: "trans-p2", Version: "1.0.0", Name: "trans-p2"},
-Trigger:    models.Trigger{ID: "trg", Type: "manual"},
-Nodes: []models.Node{
-{ID: "bad", Type: "nonexistent_activity"},
-{ID: "on_error", Type: "logger", Config: map[string]interface{}{"level": "error"}},
-},
-Transitions: []models.Transition{
-{From: "bad", To: "on_error", Type: "error"},
-},
-}
-data, _ := json.Marshal(process)
-ctx, err := exec.ExecuteFromJSON(data, map[string]interface{}{})
-require.NoError(t, err)
-s1, _ := ctx.GetValue("$.nodes.bad.status")
-assert.Equal(t, "error", s1)
-s2, _ := ctx.GetValue("$.nodes.on_error.status")
-assert.Equal(t, "success", s2)
+	exec := newTestExecutor(t)
+	process := models.Process{
+		Definition: models.Definition{ID: "trans-p2", Version: "1.0.0", Name: "trans-p2"},
+		Trigger:    models.Trigger{ID: "trg", Type: "manual"},
+		Nodes: []models.Node{
+			{ID: "bad", Type: "nonexistent_activity"},
+			{ID: "on_error", Type: "logger", Config: map[string]interface{}{"level": "error"}},
+		},
+		Transitions: []models.Transition{
+			{From: "bad", To: "on_error", Type: "error"},
+		},
+	}
+	data, _ := json.Marshal(process)
+	ctx, err := exec.ExecuteFromJSON(data, map[string]interface{}{})
+	require.NoError(t, err)
+	s1, _ := ctx.GetValue("$.nodes.bad.status")
+	assert.Equal(t, "error", s1)
+	s2, _ := ctx.GetValue("$.nodes.on_error.status")
+	assert.Equal(t, "success", s2)
 }
 
 func TestTransition_ConditionTrue(t *testing.T) {
-exec := newTestExecutor(t)
-process := models.Process{
-Definition: models.Definition{ID: "trans-p3", Version: "1.0.0", Name: "trans-p3"},
-Trigger:    models.Trigger{ID: "trg", Type: "manual"},
-Nodes: []models.Node{
-{
-ID: "script_node", Type: "script_ts",
-Script: "(function(){ return { value: 42 }; })()",
-},
-{ID: "on_true", Type: "logger", Config: map[string]interface{}{"level": "info"}},
-{ID: "on_false", Type: "logger", Config: map[string]interface{}{"level": "info"}},
-},
-Transitions: []models.Transition{
-{From: "script_node", To: "on_true", Type: "condition", Condition: "$.nodes.script_node.output.value === 42"},
-{From: "script_node", To: "on_false", Type: "nocondition"},
-},
-}
-data, _ := json.Marshal(process)
-ctx, err := exec.ExecuteFromJSON(data, map[string]interface{}{})
-require.NoError(t, err)
-s1, _ := ctx.GetValue("$.nodes.on_true.status")
-assert.Equal(t, "success", s1)
-_, errFalse := ctx.GetValue("$.nodes.on_false.status")
-assert.Error(t, errFalse, "on_false node should not have been executed")
+	exec := newTestExecutor(t)
+	process := models.Process{
+		Definition: models.Definition{ID: "trans-p3", Version: "1.0.0", Name: "trans-p3"},
+		Trigger:    models.Trigger{ID: "trg", Type: "manual"},
+		Nodes: []models.Node{
+			{
+				ID: "script_node", Type: "script_ts",
+				Script: "(function(){ return { value: 42 }; })()",
+			},
+			{ID: "on_true", Type: "logger", Config: map[string]interface{}{"level": "info"}},
+			{ID: "on_false", Type: "logger", Config: map[string]interface{}{"level": "info"}},
+		},
+		Transitions: []models.Transition{
+			{From: "script_node", To: "on_true", Type: "condition", Condition: "$.nodes.script_node.output.value === 42"},
+			{From: "script_node", To: "on_false", Type: "nocondition"},
+		},
+	}
+	data, _ := json.Marshal(process)
+	ctx, err := exec.ExecuteFromJSON(data, map[string]interface{}{})
+	require.NoError(t, err)
+	s1, _ := ctx.GetValue("$.nodes.on_true.status")
+	assert.Equal(t, "success", s1)
+	_, errFalse := ctx.GetValue("$.nodes.on_false.status")
+	assert.Error(t, errFalse, "on_false node should not have been executed")
 }
 
 func TestTransition_NoConditionFallback(t *testing.T) {
-exec := newTestExecutor(t)
-process := models.Process{
-Definition: models.Definition{ID: "trans-p4", Version: "1.0.0", Name: "trans-p4"},
-Trigger:    models.Trigger{ID: "trg", Type: "manual"},
-Nodes: []models.Node{
-{
-ID: "script_node", Type: "script_ts",
-Script: "(function(){ return { value: 99 }; })()",
-},
-{ID: "on_true", Type: "logger", Config: map[string]interface{}{"level": "info"}},
-{ID: "on_false", Type: "logger", Config: map[string]interface{}{"level": "info"}},
-},
-Transitions: []models.Transition{
-{From: "script_node", To: "on_true", Type: "condition", Condition: "$.nodes.script_node.output.value === 42"},
-{From: "script_node", To: "on_false", Type: "nocondition"},
-},
-}
-data, _ := json.Marshal(process)
-ctx, err := exec.ExecuteFromJSON(data, map[string]interface{}{})
-require.NoError(t, err)
-_, errTrue := ctx.GetValue("$.nodes.on_true.status")
-assert.Error(t, errTrue, "on_true node should not have been executed")
-s2, _ := ctx.GetValue("$.nodes.on_false.status")
-assert.Equal(t, "success", s2)
+	exec := newTestExecutor(t)
+	process := models.Process{
+		Definition: models.Definition{ID: "trans-p4", Version: "1.0.0", Name: "trans-p4"},
+		Trigger:    models.Trigger{ID: "trg", Type: "manual"},
+		Nodes: []models.Node{
+			{
+				ID: "script_node", Type: "script_ts",
+				Script: "(function(){ return { value: 99 }; })()",
+			},
+			{ID: "on_true", Type: "logger", Config: map[string]interface{}{"level": "info"}},
+			{ID: "on_false", Type: "logger", Config: map[string]interface{}{"level": "info"}},
+		},
+		Transitions: []models.Transition{
+			{From: "script_node", To: "on_true", Type: "condition", Condition: "$.nodes.script_node.output.value === 42"},
+			{From: "script_node", To: "on_false", Type: "nocondition"},
+		},
+	}
+	data, _ := json.Marshal(process)
+	ctx, err := exec.ExecuteFromJSON(data, map[string]interface{}{})
+	require.NoError(t, err)
+	_, errTrue := ctx.GetValue("$.nodes.on_true.status")
+	assert.Error(t, errTrue, "on_true node should not have been executed")
+	s2, _ := ctx.GetValue("$.nodes.on_false.status")
+	assert.Equal(t, "success", s2)
 }
