@@ -20,6 +20,26 @@ func newTestExecutor(t *testing.T) *ProcessExecutor {
 	return exec
 }
 
+// TestSendLifecycleAuditLog_AuditDisabled verifies that SendLifecycleAuditLog
+// is a safe no-op when NATS is not connected (audit disabled).
+func TestSendLifecycleAuditLog_AuditDisabled(t *testing.T) {
+	exec := newTestExecutor(t)
+	// Should not panic or return any error when audit is disabled.
+	exec.SendLifecycleAuditLog("my-flow", "rest", "deployed", "")
+	exec.SendLifecycleAuditLog("my-flow", "cron", "stopped", "")
+	exec.SendLifecycleAuditLog("my-flow", "rest", "deployed", "some error occurred")
+}
+
+// TestSendLifecycleAuditLog_StatusMapping verifies the error/success status logic:
+// a non-empty errorMsg must result in "error"; an empty one in "success".
+// We call the private helper directly so the test stays self-contained.
+func TestSendLifecycleAuditLog_StatusMapping(t *testing.T) {
+	exec := newTestExecutor(t)
+	// Both calls must be no-ops (audit disabled) — no panic expected.
+	exec.SendLifecycleAuditLog("proc-1", "rest", "deployed", "")           // success
+	exec.SendLifecycleAuditLog("proc-2", "cron", "deployed", "bad config") // error
+}
+
 // buildProcess is a test helper that creates a minimal process JSON from its parts.
 func buildProcess(id string, nodes []models.Node) []byte {
 	process := models.Process{

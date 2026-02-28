@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fetchExecutions, fetchActivityLogs, runFlow, listSecrets, createSecret, deleteSecret } from './api'
+import { fetchExecutions, fetchActivityLogs, runFlow, listSecrets, createSecret, deleteSecret, listProcesses, saveProcess, deployProcess, stopProcess, deleteProcess, getProcess } from './api'
 import type { Execution, ActivityLog } from '../types/audit'
 import type { SecretMeta } from '../types/secrets'
+import type { ProcessSummary } from '../types/deployment'
 
 describe('fetchExecutions', () => {
   beforeEach(() => {
@@ -238,5 +239,148 @@ describe('deleteSecret', () => {
     }))
     await deleteSecret('sec id with spaces')
     expect(capturedUrl).toContain('sec%20id%20with%20spaces')
+  })
+})
+
+// ── Process & Deployment API ─────────────────────────────────────────────────
+
+describe('listProcesses', () => {
+  beforeEach(() => { vi.restoreAllMocks() })
+
+  it('returns an array of process summaries on success', async () => {
+    const mockProcesses: ProcessSummary[] = [
+      { id: 'my-flow', version: '1.0.0', name: 'My Flow', status: 'draft', updated_at: '2025-01-01T00:00:00Z' },
+    ]
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(mockProcesses) }))
+
+    const result = await listProcesses()
+    expect(result).toEqual(mockProcesses)
+  })
+
+  it('includes status query param when provided', async () => {
+    let capturedUrl = ''
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      capturedUrl = url
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
+    }))
+    await listProcesses('deployed')
+    expect(capturedUrl).toContain('status=deployed')
+  })
+
+  it('throws on non-ok response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503, text: () => Promise.resolve('unavailable') }))
+    await expect(listProcesses()).rejects.toThrow('Failed to list processes (503)')
+  })
+})
+
+describe('saveProcess', () => {
+  beforeEach(() => { vi.restoreAllMocks() })
+
+  const sampleDSL = {
+    definition: { id: 'p1', version: '1.0.0', name: 'P1', description: '', settings: { persistence: 'full' as const, timeout: 30000, error_strategy: 'stop_and_rollback' as const } },
+    trigger: { id: 'trg_01', type: 'manual' as const, config: {} as never },
+    nodes: [],
+    transitions: [],
+  }
+
+  it('returns process summary on success', async () => {
+    const summary: ProcessSummary = { id: 'p1', version: '1.0.0', name: 'P1', status: 'draft', updated_at: '2025-01-01T00:00:00Z' }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(summary) }))
+
+    const result = await saveProcess(sampleDSL)
+    expect(result.id).toBe('p1')
+    expect(result.status).toBe('draft')
+  })
+
+  it('throws on non-ok response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400, json: () => Promise.resolve({ error: 'bad request' }) }))
+    await expect(saveProcess(sampleDSL)).rejects.toThrow('Failed to save process (400)')
+  })
+})
+
+describe('deployProcess', () => {
+  beforeEach(() => { vi.restoreAllMocks() })
+
+  it('returns deployment status on success', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ process_id: 'p1', status: 'deployed', message: 'cron trigger started' }) }))
+    const result = await deployProcess('p1')
+    expect(result.status).toBe('deployed')
+  })
+
+  it('throws on non-ok response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400, json: () => Promise.resolve({ error: 'bad trigger' }) }))
+    await expect(deployProcess('p1')).rejects.toThrow('Failed to deploy process (400)')
+  })
+})
+
+describe('stopProcess', () => {
+  beforeEach(() => { vi.restoreAllMocks() })
+
+  it('returns stopped status on success', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ process_id: 'p1', status: 'stopped' }) }))
+    const result = await stopProcess('p1')
+    expect(result.status).toBe('stopped')
+  })
+
+  it('throws on non-ok response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400, json: () => Promise.resolve({ error: 'not deployed' }) }))
+    await expect(stopProcess('p1')).rejects.toThrow('Failed to stop process (400)')
+  })
+})
+
+describe('deleteProcess', () => {
+  beforeEach(() => { vi.restoreAllMocks() })
+
+  it('resolves without error on 204', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve('') }))
+    await expect(deleteProcess('p1')).resolves.toBeUndefined()
+  })
+
+  it('throws on non-ok response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500, text: () => Promise.resolve('error') }))
+    await expect(deleteProcess('p1')).rejects.toThrow('Failed to delete process (500)')
+  })
+})
+
+describe('getProcess', () => {
+  beforeEach(() => { vi.restoreAllMocks() })
+
+  it('returns a process record with dsl on success', async () => {
+    const mockRecord = {
+      id: 'my-flow',
+      version: '1.0.0',
+      name: 'My Flow',
+      description: '',
+      dsl: {
+        definition: { id: 'my-flow', version: '1.0.0', name: 'My Flow', description: '', settings: { persistence: 'full', timeout: 30000, error_strategy: 'stop_and_rollback' } },
+        trigger: { id: 'trg_01', type: 'rest', config: { path: '/v1/flow', method: 'POST' } },
+        nodes: [],
+        transitions: [],
+      },
+      status: 'draft',
+      created_at: '2025-01-01T00:00:00Z',
+      updated_at: '2025-01-01T00:00:00Z',
+    }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(mockRecord) }))
+
+    const result = await getProcess('my-flow')
+    expect(result.id).toBe('my-flow')
+    expect(result.dsl.definition.id).toBe('my-flow')
+    expect(result.status).toBe('draft')
+  })
+
+  it('throws on non-ok response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404, text: () => Promise.resolve('not found') }))
+    await expect(getProcess('missing')).rejects.toThrow('Failed to get process (404)')
+  })
+
+  it('URL-encodes the process id', async () => {
+    let capturedUrl = ''
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      capturedUrl = url
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
+    }))
+    await getProcess('flow id with spaces').catch(() => undefined)
+    expect(capturedUrl).toContain('flow%20id%20with%20spaces')
   })
 })

@@ -19,6 +19,7 @@ const (
 // AuditEvent represents a single audit log entry received from NATS.
 type AuditEvent struct {
 	ExecutionID string                 `json:"execution_id"`
+	FlowID      string                 `json:"flow_id"`
 	NodeID      string                 `json:"node_id"`
 	NodeType    string                 `json:"node_type"`
 	Status      string                 `json:"status"`
