@@ -14,14 +14,14 @@ import (
 
 // ProcessRecord is a row from the processes table in the config DB.
 type ProcessRecord struct {
-	ID          string
-	Version     string
-	Name        string
-	Description string
-	DSL         json.RawMessage
-	Status      string // draft | deployed | stopped
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID          string          `json:"id"`
+	Version     string          `json:"version"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	DSL         json.RawMessage `json:"dsl"`
+	Status      string          `json:"status"` // draft | deployed | stopped
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
 }
 
 // ProcessSummary is a lightweight view used in listing endpoints.

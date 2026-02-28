@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type DragEvent } from 'react'
+import { useCallback, useRef, useState, useEffect, type DragEvent } from 'react'
 import {
   ReactFlow,
   Background,
@@ -92,12 +92,16 @@ interface DesignerCanvasProps {
   onSelectionChange: (node: DesignerNode | null) => void
   onNodesChange: (nodes: Node<NodeData>[]) => void
   onEdgesChange: (edges: Edge[]) => void
+  /** When set, the canvas replaces its current graph with these nodes/edges. */
+  graphToLoad?: { nodes: Node<NodeData>[]; edges: Edge[] } | null
+  /** Called once the graph has been loaded into the canvas state. */
+  onGraphLoaded?: () => void
 }
 
 let nodeCounter = 1
 
 /** React Flow canvas with drag-drop, connection and edge cycling */
-export function DesignerCanvas({ onSelectionChange, onNodesChange, onEdgesChange }: DesignerCanvasProps) {
+export function DesignerCanvas({ onSelectionChange, onNodesChange, onEdgesChange, graphToLoad, onGraphLoaded }: DesignerCanvasProps) {
   const reactFlowWrapper = useRef<HTMLDivElement>(null)
   const [nodes, setNodes, handleNodesChange] = useNodesState<Node<NodeData>>(initialNodes)
   const [edges, setEdges, handleEdgesChange] = useEdgesState<Edge>([])
@@ -110,6 +114,17 @@ export function DesignerCanvas({ onSelectionChange, onNodesChange, onEdgesChange
   const propagateEdges = useCallback((updatedEdges: Edge[]) => {
     onEdgesChange(updatedEdges)
   }, [onEdgesChange])
+
+  // Load an external graph when graphToLoad is provided (e.g., after "Edit" in Deployments)
+  useEffect(() => {
+    if (!graphToLoad) return
+    setNodes(graphToLoad.nodes)
+    setEdges(graphToLoad.edges)
+    propagateNodes(graphToLoad.nodes)
+    propagateEdges(graphToLoad.edges)
+    onGraphLoaded?.()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graphToLoad])
 
   const onConnect = useCallback(
     (connection: Connection) => {

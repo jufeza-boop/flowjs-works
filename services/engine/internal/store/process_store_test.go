@@ -60,7 +60,34 @@ func TestProcessStore_New(t *testing.T) {
 	assert.NotNil(t, store)
 }
 
-// TestProcessStore_Upsert_NilDB verifies that a nil DB panics (expected) — we use recover.
+// TestProcessRecord_JSON verifies that ProcessRecord serialises with snake_case JSON keys
+// (required by the frontend getProcess() API call).
+func TestProcessRecord_JSON(t *testing.T) {
+	dslBytes := json.RawMessage(`{"definition":{"id":"p1"}}`)
+	rec := &ProcessRecord{
+		ID:          "p1",
+		Version:     "1.0.0",
+		Name:        "P1",
+		Description: "desc",
+		DSL:         dslBytes,
+		Status:      "draft",
+		CreatedAt:   time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		UpdatedAt:   time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+	}
+	b, err := json.Marshal(rec)
+	require.NoError(t, err)
+
+	var m map[string]interface{}
+	require.NoError(t, json.Unmarshal(b, &m))
+	// Keys must be lowercase/snake_case for the TypeScript client
+	assert.Equal(t, "p1", m["id"])
+	assert.Equal(t, "draft", m["status"])
+	assert.Contains(t, m, "dsl")
+	assert.Contains(t, m, "created_at")
+	assert.Contains(t, m, "updated_at")
+}
+
+
 func TestProcessStore_Upsert_NilDB(t *testing.T) {
 	t.Skip("nil DB causes a panic from database/sql; integration tests cover this path")
 }

@@ -3,6 +3,19 @@ import type { InputMapping, FlowDSL } from '../types/dsl'
 import type { SecretMeta, SecretInput } from '../types/secrets'
 import type { ProcessSummary, DeploymentStatus } from '../types/deployment'
 
+/** Full process record returned by GET /api/v1/processes/{id} */
+export interface ProcessRecord {
+  id: string
+  version: string
+  name: string
+  description: string
+  /** The complete flow DSL */
+  dsl: FlowDSL
+  status: string
+  created_at: string
+  updated_at: string
+}
+
 /** Base URL for the audit-logger HTTP API */
 const AUDIT_API_BASE = import.meta.env.VITE_AUDIT_API_URL ?? 'http://localhost:8080'
 
@@ -183,6 +196,16 @@ export async function deleteProcess(processId: string): Promise<void> {
     const body = await res.text()
     throw new Error(`Failed to delete process (${res.status}): ${body}`)
   }
+}
+
+/** Fetch the full record (including DSL) for a saved process */
+export async function getProcess(processId: string): Promise<ProcessRecord> {
+  const res = await fetch(`${ENGINE_API_BASE}/api/v1/processes/${encodeURIComponent(processId)}`)
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`Failed to get process (${res.status}): ${body}`)
+  }
+  return res.json() as Promise<ProcessRecord>
 }
 
 /** Deploy a process (start its triggers) */

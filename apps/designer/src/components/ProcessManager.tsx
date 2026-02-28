@@ -31,13 +31,15 @@ interface Props {
   nodes: Node<NodeData>[]
   edges: Edge[]
   definition: FlowDefinition
+  /** Called when the user wants to edit a saved process in the designer. */
+  onEditProcess: (processId: string) => void
 }
 
 /**
  * ProcessManager — lists saved processes and provides one-click deploy / stop.
  * Users can also push the current designer graph to the server from here.
  */
-export function ProcessManager({ nodes, edges, definition }: Props) {
+export function ProcessManager({ nodes, edges, definition, onEditProcess }: Props) {
   const [processes, setProcesses] = useState<ProcessSummary[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -219,6 +221,14 @@ export function ProcessManager({ nodes, edges, definition }: Props) {
 
                 {/* Right: action buttons */}
                 <div className="flex items-center gap-2 ml-4 flex-shrink-0">
+                  <button
+                    onClick={() => onEditProcess(p.id)}
+                    disabled={busyId === p.id}
+                    className="text-xs px-2.5 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded hover:bg-blue-100 disabled:opacity-50 transition-colors"
+                    aria-label={`Edit ${p.id}`}
+                  >
+                    ✏️ Edit
+                  </button>
                   {p.status !== 'deployed' ? (
                     <button
                       onClick={() => void handleDeploy(p.id)}

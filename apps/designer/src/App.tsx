@@ -10,7 +10,8 @@ import { DebugPanel } from './components/DebugPanel'
 import { SecretsManager } from './components/SecretsManager'
 import { ProcessManager } from './components/ProcessManager'
 import { serializeGraph } from './lib/serializer'
-import { runFlow } from './lib/api'
+import { deserializeGraph } from './lib/deserializer'
+import { runFlow, saveProcess, getProcess } from './lib/api'
 import type { RunFlowResponse } from './lib/api'
 import type { NodeData, DesignerNode } from './types/designer'
 import type { FlowDefinition } from './types/dsl'
@@ -32,13 +33,17 @@ type View = 'designer' | 'history' | 'secrets' | 'deployments'
 /** Root application — three-column designer layout or execution history view */
 export default function App() {
   const [view, setView] = useState<View>('designer')
+  const [definition, setDefinition] = useState<FlowDefinition>(DEFAULT_DEFINITION)
   const [selectedNode, setSelectedNode] = useState<DesignerNode | null>(null)
   const [nodes, setNodes] = useState<Node<NodeData>[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
+  const [graphToLoad, setGraphToLoad] = useState<{ nodes: Node<NodeData>[]; edges: Edge[] } | null>(null)
   const [runLoading, setRunLoading] = useState(false)
   const [runFlowResult, setRunFlowResult] = useState<RunFlowResponse | null>(null)
   const [runRawResult, setRunRawResult] = useState<string | null>(null)
   const [runError, setRunError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saveMsg, setSaveMsg] = useState<string | null>(null)
 
   const handleNodeUpdate = useCallback(
     (nodeId: string, updates: Partial<NodeData>) => {
@@ -67,7 +72,7 @@ export default function App() {
     setRunRawResult(null)
     setRunError(null)
     try {
-      const dsl = serializeGraph(nodes, edges, DEFAULT_DEFINITION)
+      const dsl = serializeGraph(nodes, edges, definition)
       const result = await runFlow({ dsl })
       // Normalize the engine's `nodes` map into a flat `node_results` array for DebugPanel.
       // The engine returns nodes as Record<nodeId, {output, status}> — never as node_results.
@@ -94,6 +99,37 @@ export default function App() {
     setRunFlowResult(null)
     setRunRawResult(null)
     setRunError(null)
+  }, [])
+
+  // ── Save current flow to the DB ──────────────────────────────────────────
+
+  const handleSave = useCallback(async () => {
+    setSaving(true)
+    setSaveMsg(null)
+    try {
+      const dsl = serializeGraph(nodes, edges, definition)
+      await saveProcess(dsl)
+      setSaveMsg('Saved ✓')
+      setTimeout(() => setSaveMsg(null), 3000)
+    } catch (err) {
+      setSaveMsg(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSaving(false)
+    }
+  }, [nodes, edges, definition])
+
+  // ── Load a saved process into the designer for editing ───────────────────
+
+  const handleEditProcess = useCallback(async (processId: string) => {
+    try {
+      const record = await getProcess(processId)
+      const loaded = deserializeGraph(record.dsl)
+      setDefinition(record.dsl.definition)
+      setGraphToLoad(loaded)
+      setView('designer')
+    } catch (err) {
+      setRunError(err instanceof Error ? err.message : String(err))
+    }
   }, [])
 
   return (
@@ -145,6 +181,19 @@ export default function App() {
         {view === 'designer' && (
           <div className="flex items-center gap-2">
             <button
+              onClick={() => void handleSave()}
+              disabled={saving}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            >
+              <span>{saving ? '⏳' : '💾'}</span>
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+            {saveMsg && (
+              <span className={`text-xs font-medium ${saveMsg.includes('✓') ? 'text-green-600' : 'text-red-500'}`}>
+                {saveMsg}
+              </span>
+            )}
+            <button
               onClick={handleRunFlow}
               disabled={runLoading}
               className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
@@ -152,7 +201,7 @@ export default function App() {
               <span>{runLoading ? '⏳' : '▶'}</span>
               {runLoading ? 'Running…' : 'Run Flow'}
             </button>
-            <ExportButton nodes={nodes} edges={edges} definition={DEFAULT_DEFINITION} />
+            <ExportButton nodes={nodes} edges={edges} definition={definition} />
           </div>
         )}
       </header>
@@ -167,6 +216,8 @@ export default function App() {
                 onSelectionChange={setSelectedNode}
                 onNodesChange={setNodes}
                 onEdgesChange={setEdges}
+                graphToLoad={graphToLoad}
+                onGraphLoaded={() => setGraphToLoad(null)}
               />
               <ConfigPanel selectedNode={selectedNode} onNodeUpdate={handleNodeUpdate} allNodes={nodes as DesignerNode[]} />
             </ReactFlowProvider>
@@ -174,7 +225,7 @@ export default function App() {
         ) : view === 'history' ? (
           <ExecutionHistory />
         ) : view === 'deployments' ? (
-          <ProcessManager nodes={nodes} edges={edges} definition={DEFAULT_DEFINITION} />
+          <ProcessManager nodes={nodes} edges={edges} definition={definition} onEditProcess={(id) => void handleEditProcess(id)} />
         ) : (
           <SecretsManager />
         )}
