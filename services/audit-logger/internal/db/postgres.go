@@ -89,11 +89,19 @@ func (c *Client) BatchInsertLogs(events []batcher.AuditEvent) error {
 // upsertExecutions ensures that every execution_id referenced by the batch
 // has a corresponding row in the executions table.
 func upsertExecutions(tx *sql.Tx, events []batcher.AuditEvent) error {
-	// Deduplicate execution IDs within this batch.
-	seen := make(map[string]struct{})
+	// Deduplicate execution IDs within this batch and record their flow_id.
+	// The first event seen for each execution_id wins.
+	seen := make(map[string]string) // executionID → flowID
 	for _, e := range events {
-		if e.ExecutionID != "" {
-			seen[e.ExecutionID] = struct{}{}
+		if e.ExecutionID == "" {
+			continue
+		}
+		if _, exists := seen[e.ExecutionID]; !exists {
+			flowID := e.FlowID
+			if flowID == "" {
+				flowID = "unknown"
+			}
+			seen[e.ExecutionID] = flowID
 		}
 	}
 
@@ -106,8 +114,8 @@ func upsertExecutions(tx *sql.Tx, events []batcher.AuditEvent) error {
 	}
 	defer stmt.Close()
 
-	for id := range seen {
-		if _, err := stmt.Exec(id, "unknown", "STARTED"); err != nil {
+	for id, flowID := range seen {
+		if _, err := stmt.Exec(id, flowID, "STARTED"); err != nil {
 			return fmt.Errorf("upsert execution %s: %w", id, err)
 		}
 	}

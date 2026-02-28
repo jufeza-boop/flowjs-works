@@ -73,10 +73,17 @@ func (e *ProcessExecutor) ExecuteFromJSON(jsonData []byte, triggerData map[strin
 // Execute executes a process with the given trigger data
 func (e *ProcessExecutor) Execute(process *models.Process, triggerData map[string]interface{}) (*models.ExecutionContext, error) {
 	executionID := uuid.New().String()
-	log.Printf("Starting execution %s for process %s (v%s)", executionID, process.Definition.ID, process.Definition.Version)
+	processID := process.Definition.ID
+	log.Printf("Starting execution %s for process %s (v%s)", executionID, processID, process.Definition.Version)
 
 	ctx := models.NewExecutionContext(executionID)
+	ctx.ProcessID = processID
 	ctx.SetTriggerData(triggerData)
+
+	// Emit execution-start audit event so there is always at least one record
+	// per triggered execution, even when no nodes run.
+	e.sendAuditLog(executionID, processID, processID, "process", "started",
+		map[string]interface{}{"trigger": triggerData}, nil, "")
 
 	// Sequential mode: backward-compatible when no transitions and no Next fields
 	if isSequentialMode(process) {
@@ -254,7 +261,7 @@ func (e *ProcessExecutor) executeNode(node *models.Node, ctx *models.ExecutionCo
 		input, err = ctx.ResolveInputMapping(node.InputMapping)
 		if err != nil {
 			ctx.SetNodeStatus(node.ID, "error")
-			e.sendAuditLog(ctx.ExecutionID, node.ID, node.Type, "error", nil, nil, err.Error())
+			e.sendAuditLog(ctx.ExecutionID, ctx.ProcessID, node.ID, node.Type, "error", nil, nil, err.Error())
 			return fmt.Errorf("failed to resolve input mapping: %w", err)
 		}
 	} else {
@@ -277,7 +284,7 @@ func (e *ProcessExecutor) executeNode(node *models.Node, ctx *models.ExecutionCo
 		secretData, secretErr := e.secretResolver.Resolve(context.Background(), node.SecretRef)
 		if secretErr != nil {
 			ctx.SetNodeStatus(node.ID, "error")
-			e.sendAuditLog(ctx.ExecutionID, node.ID, node.Type, "error", input, nil, secretErr.Error())
+			e.sendAuditLog(ctx.ExecutionID, ctx.ProcessID, node.ID, node.Type, "error", input, nil, secretErr.Error())
 			return fmt.Errorf("failed to resolve secret %s: %w", node.SecretRef, secretErr)
 		}
 		for k, v := range secretData {
@@ -290,7 +297,7 @@ func (e *ProcessExecutor) executeNode(node *models.Node, ctx *models.ExecutionCo
 	if !ok {
 		execErr := fmt.Errorf("unknown activity type: %s", node.Type)
 		ctx.SetNodeStatus(node.ID, "error")
-		e.sendAuditLog(ctx.ExecutionID, node.ID, node.Type, "error", input, nil, execErr.Error())
+		e.sendAuditLog(ctx.ExecutionID, ctx.ProcessID, node.ID, node.Type, "error", input, nil, execErr.Error())
 		return execErr
 	}
 
@@ -316,26 +323,28 @@ func (e *ProcessExecutor) executeNode(node *models.Node, ctx *models.ExecutionCo
 
 	if err != nil {
 		ctx.SetNodeStatus(node.ID, "error")
-		e.sendAuditLog(ctx.ExecutionID, node.ID, node.Type, "error", input, nil, err.Error())
+		e.sendAuditLog(ctx.ExecutionID, ctx.ProcessID, node.ID, node.Type, "error", input, nil, err.Error())
 		return err
 	}
 
 	ctx.SetNodeOutput(node.ID, output)
 	ctx.SetNodeStatus(node.ID, "success")
 	log.Printf("Node %s completed successfully in %v", node.ID, duration)
-	e.sendAuditLog(ctx.ExecutionID, node.ID, node.Type, "success", input, output, "")
+	e.sendAuditLog(ctx.ExecutionID, ctx.ProcessID, node.ID, node.Type, "success", input, output, "")
 
 	return nil
 }
 
 // sendAuditLog sends an audit message to NATS
-func (e *ProcessExecutor) sendAuditLog(executionID, nodeID, nodeType, status string, input, output map[string]interface{}, errorMsg string) {
+func (e *ProcessExecutor) sendAuditLog(executionID, flowID, nodeID, nodeType, status string, input, output map[string]interface{}, errorMsg string) {
 	if !e.auditEnabled || e.natsConn == nil {
 		return
 	}
+	log.Printf("[audit] publishing event: executionID=%s flowID=%s nodeID=%s nodeType=%s status=%s", executionID, flowID, nodeID, nodeType, status)
 
 	auditMsg := map[string]interface{}{
 		"execution_id": executionID,
+		"flow_id":      flowID,
 		"node_id":      nodeID,
 		"node_type":    nodeType,
 		"status":       status,
@@ -350,8 +359,16 @@ func (e *ProcessExecutor) sendAuditLog(executionID, nodeID, nodeType, status str
 
 	msgBytes, err := json.Marshal(auditMsg)
 	if err != nil {
-		log.Printf("Failed to marshal audit message: %v", err)
-		return
+		// If full marshal fails (e.g. non-JSON-serializable output), retry without input/output data
+		// so the event metadata is still recorded.
+		log.Printf("Failed to marshal full audit message for node %s: %v — retrying without data fields", nodeID, err)
+		auditMsg["input"] = nil
+		auditMsg["output"] = nil
+		msgBytes, err = json.Marshal(auditMsg)
+		if err != nil {
+			log.Printf("Failed to marshal audit message for node %s (fallback): %v", nodeID, err)
+			return
+		}
 	}
 
 	if err := e.natsConn.Publish("audit.logs", msgBytes); err != nil {
@@ -369,9 +386,9 @@ func (e *ProcessExecutor) SendLifecycleAuditLog(processID, triggerType, action, 
 		status = "error"
 	}
 	input := map[string]interface{}{
-		"action":      action,
-		"process_id":  processID,
+		"action":       action,
+		"process_id":   processID,
 		"trigger_type": triggerType,
 	}
-	e.sendAuditLog(uuid.New().String(), processID, "lifecycle", status, input, nil, errorMsg)
+	e.sendAuditLog(uuid.New().String(), processID, processID, "lifecycle", status, input, nil, errorMsg)
 }

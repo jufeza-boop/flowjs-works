@@ -14,6 +14,7 @@ var arrayIndexRe = regexp.MustCompile(`^(.+)\[(\d+)\]$`)
 // ExecutionContext holds the state during process execution
 type ExecutionContext struct {
 	ExecutionID string                            `json:"execution_id"`
+	ProcessID   string                            `json:"process_id"`
 	Trigger     map[string]interface{}            `json:"trigger"`
 	Nodes       map[string]map[string]interface{} `json:"nodes"`
 }
@@ -57,20 +58,20 @@ func (ctx *ExecutionContext) SetNodeStatus(nodeID string, status string) {
 func (ctx *ExecutionContext) GetValue(path string) (interface{}, error) {
 	// Remove leading $. if present
 	path = strings.TrimPrefix(path, "$.")
-	
+
 	// Split the path into parts
 	parts := strings.Split(path, ".")
-	
+
 	if len(parts) == 0 {
 		return nil, fmt.Errorf("invalid path: %s", path)
 	}
-	
+
 	// Start with the root context
 	var current interface{} = map[string]interface{}{
 		"trigger": ctx.Trigger,
 		"nodes":   ctx.Nodes,
 	}
-	
+
 	// Traverse the path
 	for _, part := range parts {
 		// Check for array index syntax, e.g. "items[0]"
@@ -115,14 +116,14 @@ func (ctx *ExecutionContext) GetValue(path string) (interface{}, error) {
 			return nil, fmt.Errorf("cannot traverse path %s: not a map at part %s (type: %T)", path, part, current)
 		}
 	}
-	
+
 	return current, nil
 }
 
 // ResolveInputMapping resolves all input mappings for a node
 func (ctx *ExecutionContext) ResolveInputMapping(inputMapping map[string]interface{}) (map[string]interface{}, error) {
 	result := make(map[string]interface{})
-	
+
 	for key, value := range inputMapping {
 		switch v := value.(type) {
 		case string:
@@ -141,7 +142,7 @@ func (ctx *ExecutionContext) ResolveInputMapping(inputMapping map[string]interfa
 			result[key] = v
 		}
 	}
-	
+
 	return result, nil
 }
 
