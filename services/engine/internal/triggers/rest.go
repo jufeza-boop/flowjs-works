@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -140,13 +141,22 @@ func (r *restRegistryImpl) deregister(path, method string) {
 // ServeHTTP dispatches incoming requests to the registered handler for the
 // given method+path combination. It is intended to be used inside a catch-all
 // HTTP route like /triggers/{path}.
+//
+// The /triggers prefix is stripped from the URL path before the lookup so that
+// a DSL trigger configured with path "/v1/rest" is reachable at
+// /triggers/v1/rest without needing to duplicate the prefix in the DSL.
 func (r *restRegistryImpl) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// Strip the mount-point prefix so the key matches the DSL path.
+	lookupPath := strings.TrimPrefix(req.URL.Path, "/triggers")
+	if lookupPath == "" {
+		lookupPath = "/"
+	}
 	r.mu.RLock()
-	key := registryKey(req.URL.Path, req.Method)
+	key := registryKey(lookupPath, req.Method)
 	h, ok := r.handlers[key]
 	if !ok {
 		// Fall back to method-agnostic lookup registered under POST.
-		h, ok = r.handlers[registryKey(req.URL.Path, "POST")]
+		h, ok = r.handlers[registryKey(lookupPath, "POST")]
 	}
 	r.mu.RUnlock()
 

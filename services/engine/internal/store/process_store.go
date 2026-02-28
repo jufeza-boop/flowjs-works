@@ -30,6 +30,7 @@ type ProcessSummary struct {
 	Version     string    `json:"version"`
 	Name        string    `json:"name"`
 	Status      string    `json:"status"`
+	TriggerType string    `json:"trigger_type"` // e.g. "rest", "soap", "cron"
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
@@ -95,13 +96,14 @@ func (s *ProcessStore) List(ctx context.Context, statusFilter string) ([]Process
 		rows *sql.Rows
 		err  error
 	)
+	const baseCols = `id, version, name, status, COALESCE(dsl->'trigger'->>'type', '') AS trigger_type, updated_at`
 	if statusFilter != "" {
 		rows, err = s.db.QueryContext(ctx,
-			`SELECT id, version, name, status, updated_at FROM processes WHERE status = $1 ORDER BY updated_at DESC`,
+			`SELECT `+baseCols+` FROM processes WHERE status = $1 ORDER BY updated_at DESC`,
 			statusFilter)
 	} else {
 		rows, err = s.db.QueryContext(ctx,
-			`SELECT id, version, name, status, updated_at FROM processes ORDER BY updated_at DESC`)
+			`SELECT `+baseCols+` FROM processes ORDER BY updated_at DESC`)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("process_store: list: %w", err)
@@ -111,7 +113,7 @@ func (s *ProcessStore) List(ctx context.Context, statusFilter string) ([]Process
 	var result []ProcessSummary
 	for rows.Next() {
 		var s ProcessSummary
-		if err := rows.Scan(&s.ID, &s.Version, &s.Name, &s.Status, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Version, &s.Name, &s.Status, &s.TriggerType, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("process_store: scan summary: %w", err)
 		}
 		result = append(result, s)

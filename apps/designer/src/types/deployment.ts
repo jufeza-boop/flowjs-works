@@ -14,6 +14,8 @@ export interface ProcessSummary {
   version: string
   name: string
   status: ProcessStatus
+  /** DSL trigger type, e.g. "rest" | "soap" | "cron" | "rabbitmq" | "mcp" | "manual" */
+  trigger_type: string
   updated_at: string
 }
 

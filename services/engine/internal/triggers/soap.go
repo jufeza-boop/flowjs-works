@@ -189,9 +189,17 @@ func (r *soapRegistryImpl) deregister(path string) {
 
 // ServeHTTP dispatches the incoming request to the handler registered for
 // the request's URL path.
+//
+// The /soap prefix is stripped before the lookup so that a DSL trigger with
+// path "/my-service" is reachable at /soap/my-service without requiring the
+// prefix to be embedded in the DSL config.
 func (r *soapRegistryImpl) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	lookupPath := strings.TrimPrefix(req.URL.Path, "/soap")
+	if lookupPath == "" {
+		lookupPath = "/"
+	}
 	r.mu.RLock()
-	h, ok := r.handlers[req.URL.Path]
+	h, ok := r.handlers[lookupPath]
 	r.mu.RUnlock()
 
 	if !ok {

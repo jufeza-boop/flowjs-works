@@ -222,9 +222,12 @@ func TestRESTTrigger_StartStop(t *testing.T) {
 	exec := &mockExecutor{}
 	tr := newRESTTrigger(exec)
 
-	const path = "/triggers/test-rest-start-stop"
+	// dslPath is what goes in the DSL config (no mount prefix).
+	// reqPath is the full URL the caller uses (mirrors production: /triggers<dslPath>).
+	const dslPath = "/test-rest-start-stop"
+	const reqPath = "/triggers" + dslPath
 	proc := buildProcess("rest-ss", "rest", map[string]interface{}{
-		"path":   path,
+		"path":   dslPath,
 		"method": "POST",
 	})
 
@@ -235,7 +238,7 @@ func TestRESTTrigger_StartStop(t *testing.T) {
 	srv := httptest.NewServer(GetRegistryHandler())
 	defer srv.Close()
 
-	resp, err := http.Post(srv.URL+path, "application/json", strings.NewReader(`{}`))
+	resp, err := http.Post(srv.URL+reqPath, "application/json", strings.NewReader(`{}`))
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
@@ -243,7 +246,7 @@ func TestRESTTrigger_StartStop(t *testing.T) {
 
 	// After stop, the same path must return 404.
 	require.NoError(t, tr.Stop())
-	resp2, err := http.Post(srv.URL+path, "application/json", strings.NewReader(`{}`))
+	resp2, err := http.Post(srv.URL+reqPath, "application/json", strings.NewReader(`{}`))
 	require.NoError(t, err)
 	defer resp2.Body.Close()
 	assert.Equal(t, http.StatusNotFound, resp2.StatusCode)
@@ -255,9 +258,10 @@ func TestRESTTrigger_TriggerDataShape(t *testing.T) {
 	exec := &mockExecutor{}
 	tr := newRESTTrigger(exec)
 
-	const path = "/triggers/test-rest-data-shape"
+	const dslPath = "/test-rest-data-shape"
+	const reqPath = "/triggers" + dslPath
 	proc := buildProcess("rest-ds", "rest", map[string]interface{}{
-		"path":   path,
+		"path":   dslPath,
 		"method": "POST",
 	})
 	require.NoError(t, tr.Start(context.Background(), proc))
@@ -266,7 +270,7 @@ func TestRESTTrigger_TriggerDataShape(t *testing.T) {
 	srv := httptest.NewServer(GetRegistryHandler())
 	defer srv.Close()
 
-	req, err := http.NewRequest(http.MethodPost, srv.URL+path, strings.NewReader(`{"key":"val"}`))
+	req, err := http.NewRequest(http.MethodPost, srv.URL+reqPath, strings.NewReader(`{"key":"val"}`))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer tok")
@@ -289,15 +293,15 @@ func TestRESTTrigger_ExecutionError(t *testing.T) {
 	exec := &mockExecutor{err: fmt.Errorf("flow exploded")}
 	tr := newRESTTrigger(exec)
 
-	const path = "/triggers/test-rest-exec-error"
-	proc := buildProcess("rest-err", "rest", map[string]interface{}{"path": path})
+	const dslPath = "/test-rest-exec-error"
+	proc := buildProcess("rest-err", "rest", map[string]interface{}{"path": dslPath})
 	require.NoError(t, tr.Start(context.Background(), proc))
 	t.Cleanup(func() { _ = tr.Stop() })
 
 	srv := httptest.NewServer(GetRegistryHandler())
 	defer srv.Close()
 
-	resp, err := http.Post(srv.URL+path, "application/json", strings.NewReader(`{}`))
+	resp, err := http.Post(srv.URL+"/triggers"+dslPath, "application/json", strings.NewReader(`{}`))
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
@@ -320,20 +324,20 @@ func TestSOAPTriggerConfig_MissingPath(t *testing.T) {
 }
 
 func TestSOAPTriggerConfig_Valid(t *testing.T) {
-	path, wsdl, err := soapTriggerConfig(map[string]interface{}{"path": "/soap/svc"})
+	path, wsdl, err := soapTriggerConfig(map[string]interface{}{"path": "/svc"})
 	require.NoError(t, err)
-	assert.Equal(t, "/soap/svc", path)
+	assert.Equal(t, "/svc", path)
 	assert.Equal(t, "", wsdl)
 }
 
 func TestSOAPTriggerConfig_WithWSDL(t *testing.T) {
 	const doc = `<?xml version="1.0"?><definitions/>`
 	path, wsdl, err := soapTriggerConfig(map[string]interface{}{
-		"path": "/soap/svc",
+		"path": "/svc",
 		"wsdl": doc,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, "/soap/svc", path)
+	assert.Equal(t, "/svc", path)
 	assert.Equal(t, doc, wsdl)
 }
 
@@ -347,8 +351,9 @@ func TestSOAPTrigger_StartStop(t *testing.T) {
 	exec := &mockExecutor{}
 	tr := newSOAPTrigger(exec)
 
-	const path = "/soap/test-soap-start-stop"
-	proc := buildProcess("soap-ss", "soap", map[string]interface{}{"path": path})
+	const dslPath = "/test-soap-start-stop"
+	const reqPath = "/soap" + dslPath
+	proc := buildProcess("soap-ss", "soap", map[string]interface{}{"path": dslPath})
 
 	require.NoError(t, tr.Start(context.Background(), proc))
 	t.Cleanup(func() { _ = tr.Stop() })
@@ -357,7 +362,7 @@ func TestSOAPTrigger_StartStop(t *testing.T) {
 	defer srv.Close()
 
 	soapReq := soapEnvelopeFixture("<ping/>")
-	resp, err := http.Post(srv.URL+path, "text/xml", strings.NewReader(soapReq))
+	resp, err := http.Post(srv.URL+reqPath, "text/xml", strings.NewReader(soapReq))
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
@@ -366,7 +371,7 @@ func TestSOAPTrigger_StartStop(t *testing.T) {
 	assert.Contains(t, exec.executions[0]["body"], "ping")
 
 	require.NoError(t, tr.Stop())
-	resp2, err := http.Post(srv.URL+path, "text/xml", strings.NewReader(soapReq))
+	resp2, err := http.Post(srv.URL+reqPath, "text/xml", strings.NewReader(soapReq))
 	require.NoError(t, err)
 	defer resp2.Body.Close()
 	assert.Equal(t, http.StatusNotFound, resp2.StatusCode)
@@ -378,15 +383,15 @@ func TestSOAPTrigger_WSDLNotConfigured(t *testing.T) {
 	exec := &mockExecutor{}
 	tr := newSOAPTrigger(exec)
 
-	const path = "/soap/test-soap-wsdl-missing"
-	proc := buildProcess("soap-wsdl-nil", "soap", map[string]interface{}{"path": path})
+	const dslPath = "/test-soap-wsdl-missing"
+	proc := buildProcess("soap-wsdl-nil", "soap", map[string]interface{}{"path": dslPath})
 	require.NoError(t, tr.Start(context.Background(), proc))
 	t.Cleanup(func() { _ = tr.Stop() })
 
 	srv := httptest.NewServer(GetSOAPRegistryHandler())
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + path + "?wsdl")
+	resp, err := http.Get(srv.URL + "/soap" + dslPath + "?wsdl")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
@@ -400,9 +405,9 @@ func TestSOAPTrigger_WSDLServed(t *testing.T) {
 	exec := &mockExecutor{}
 	tr := newSOAPTrigger(exec)
 
-	const path = "/soap/test-soap-wsdl-served"
+	const dslPath = "/test-soap-wsdl-served"
 	proc := buildProcess("soap-wsdl-ok", "soap", map[string]interface{}{
-		"path": path,
+		"path": dslPath,
 		"wsdl": wsdlDoc,
 	})
 	require.NoError(t, tr.Start(context.Background(), proc))
@@ -411,7 +416,7 @@ func TestSOAPTrigger_WSDLServed(t *testing.T) {
 	srv := httptest.NewServer(GetSOAPRegistryHandler())
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + path + "?wsdl")
+	resp, err := http.Get(srv.URL + "/soap" + dslPath + "?wsdl")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -425,15 +430,15 @@ func TestSOAPTrigger_NonPOSTMethod(t *testing.T) {
 	exec := &mockExecutor{}
 	tr := newSOAPTrigger(exec)
 
-	const path = "/soap/test-soap-non-post"
-	proc := buildProcess("soap-nonpost", "soap", map[string]interface{}{"path": path})
+	const dslPath = "/test-soap-non-post"
+	proc := buildProcess("soap-nonpost", "soap", map[string]interface{}{"path": dslPath})
 	require.NoError(t, tr.Start(context.Background(), proc))
 	t.Cleanup(func() { _ = tr.Stop() })
 
 	srv := httptest.NewServer(GetSOAPRegistryHandler())
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + path)
+	resp, err := http.Get(srv.URL + "/soap" + dslPath)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
@@ -446,15 +451,15 @@ func TestSOAPTrigger_InvalidXML(t *testing.T) {
 	exec := &mockExecutor{}
 	tr := newSOAPTrigger(exec)
 
-	const path = "/soap/test-soap-invalid-xml"
-	proc := buildProcess("soap-bad-xml", "soap", map[string]interface{}{"path": path})
+	const dslPath = "/test-soap-invalid-xml"
+	proc := buildProcess("soap-bad-xml", "soap", map[string]interface{}{"path": dslPath})
 	require.NoError(t, tr.Start(context.Background(), proc))
 	t.Cleanup(func() { _ = tr.Stop() })
 
 	srv := httptest.NewServer(GetSOAPRegistryHandler())
 	defer srv.Close()
 
-	resp, err := http.Post(srv.URL+path, "text/xml", strings.NewReader("not xml at all <<<"))
+	resp, err := http.Post(srv.URL+"/soap"+dslPath, "text/xml", strings.NewReader("not xml at all <<<"))
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
@@ -467,8 +472,8 @@ func TestSOAPTrigger_SuccessfulExecution(t *testing.T) {
 	exec := &mockExecutor{}
 	tr := newSOAPTrigger(exec)
 
-	const path = "/soap/test-soap-success"
-	proc := buildProcess("soap-ok", "soap", map[string]interface{}{"path": path})
+	const dslPath = "/test-soap-success"
+	proc := buildProcess("soap-ok", "soap", map[string]interface{}{"path": dslPath})
 	require.NoError(t, tr.Start(context.Background(), proc))
 	t.Cleanup(func() { _ = tr.Stop() })
 
@@ -476,7 +481,7 @@ func TestSOAPTrigger_SuccessfulExecution(t *testing.T) {
 	defer srv.Close()
 
 	body := soapEnvelopeFixture("<invoiceRequest><id>42</id></invoiceRequest>")
-	req, err := http.NewRequest(http.MethodPost, srv.URL+path, strings.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/soap"+dslPath, strings.NewReader(body))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "text/xml; charset=utf-8")
 	req.Header.Set("SOAPAction", `"urn:invoiceService#getInvoice"`)
@@ -505,15 +510,15 @@ func TestSOAPTrigger_ExecutionError(t *testing.T) {
 	exec := &mockExecutor{err: fmt.Errorf("downstream system unavailable")}
 	tr := newSOAPTrigger(exec)
 
-	const path = "/soap/test-soap-exec-error"
-	proc := buildProcess("soap-exec-err", "soap", map[string]interface{}{"path": path})
+	const dslPath = "/test-soap-exec-error"
+	proc := buildProcess("soap-exec-err", "soap", map[string]interface{}{"path": dslPath})
 	require.NoError(t, tr.Start(context.Background(), proc))
 	t.Cleanup(func() { _ = tr.Stop() })
 
 	srv := httptest.NewServer(GetSOAPRegistryHandler())
 	defer srv.Close()
 
-	resp, err := http.Post(srv.URL+path, "text/xml", strings.NewReader(soapEnvelopeFixture("<op/>")))
+	resp, err := http.Post(srv.URL+"/soap"+dslPath, "text/xml", strings.NewReader(soapEnvelopeFixture("<op/>")))
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -529,7 +534,7 @@ func TestManager_DeploySOAPTrigger(t *testing.T) {
 	mgr := NewManager(exec)
 
 	proc := buildProcess("soap-mgr", "soap", map[string]interface{}{
-		"path": "/soap/test-manager-soap-deploy",
+		"path": "/test-manager-soap-deploy",
 	})
 	require.NoError(t, mgr.Deploy(proc))
 	assert.True(t, mgr.IsRunning("soap-mgr"))

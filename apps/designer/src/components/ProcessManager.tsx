@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { ProcessSummary, ProcessStatus } from '../types/deployment'
 import type { FlowDSL } from '../types/dsl'
 import {
@@ -7,6 +7,7 @@ import {
   deleteProcess,
   deployProcess,
   stopProcess,
+  getProcess,
 } from '../lib/api'
 import { serializeGraph } from '../lib/serializer'
 import type { Node, Edge } from '@xyflow/react'
@@ -46,6 +47,11 @@ export function ProcessManager({ nodes, edges, definition, onEditProcess }: Prop
   const [actionError, setActionError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  // Cache of resolved trigger endpoint URLs keyed by process id
+  const [triggerUrls, setTriggerUrls] = useState<Record<string, string>>({})
+  // Tracks which process id just had its URL copied (for feedback)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -115,6 +121,44 @@ export function ProcessManager({ nodes, edges, definition, onEditProcess }: Prop
     },
     [reload],
   )
+
+  // ── Trigger URL ──────────────────────────────────────────────────────────
+
+  /** Fetch the full DSL for a process and compute its inbound HTTP endpoint URL. */
+  const handleFetchUrl = useCallback(async (id: string) => {
+    if (triggerUrls[id]) {
+      // Already cached — just copy again
+      void navigator.clipboard.writeText(triggerUrls[id])
+      setCopiedId(id)
+      if (copyTimer.current) clearTimeout(copyTimer.current)
+      copyTimer.current = setTimeout(() => setCopiedId(null), 2000)
+      return
+    }
+    try {
+      const rec = await getProcess(id)
+      const engineBase = (import.meta.env.VITE_ENGINE_API_URL as string | undefined) ?? 'http://localhost:9090'
+      const type = rec.dsl?.trigger?.type
+      const cfg = rec.dsl?.trigger?.config as Record<string, string> | undefined
+      const path = cfg?.path ?? ''
+      let url = ''
+      if (type === 'rest' && path) {
+        url = `${engineBase}/triggers${path}`
+      } else if (type === 'soap' && path) {
+        url = `${engineBase}/soap${path}`
+      }
+      if (url) {
+        setTriggerUrls((prev) => ({ ...prev, [id]: url }))
+        void navigator.clipboard.writeText(url)
+        setCopiedId(id)
+        if (copyTimer.current) clearTimeout(copyTimer.current)
+        copyTimer.current = setTimeout(() => setCopiedId(null), 2000)
+      } else {
+        setTriggerUrls((prev) => ({ ...prev, [id]: '__none__' }))
+      }
+    } catch {
+      // Non-critical — silently ignore
+    }
+  }, [triggerUrls])
 
   // ── Delete ───────────────────────────────────────────────────────────────
 
@@ -216,11 +260,38 @@ export function ProcessManager({ nodes, edges, definition, onEditProcess }: Prop
                       <span className="mx-1">·</span>
                       {new Date(p.updated_at).toLocaleString()}
                     </p>
+                    {/* Trigger endpoint URL — visible for deployed REST / SOAP processes */}
+                    {p.status === 'deployed' && triggerUrls[p.id] && triggerUrls[p.id] !== '__none__' && (
+                      <div className="flex items-center gap-1 mt-1">
+                        <code className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded truncate max-w-[260px]">
+                          {triggerUrls[p.id]}
+                        </code>
+                        <button
+                          onClick={() => void handleFetchUrl(p.id)}
+                          className="text-[10px] px-1.5 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex-shrink-0"
+                          title="Copy URL"
+                        >
+                          {copiedId === p.id ? '✓ Copied' : '⎘ Copy'}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {/* Right: action buttons */}
                 <div className="flex items-center gap-2 ml-4 flex-shrink-0">
+                  {/* Show endpoint URL button — only for deployed REST / SOAP processes */}
+                  {p.status === 'deployed' && (p.trigger_type === 'rest' || p.trigger_type === 'soap') && (
+                    <button
+                      onClick={() => void handleFetchUrl(p.id)}
+                      disabled={busyId === p.id}
+                      className="text-xs px-2.5 py-1.5 bg-indigo-50 text-indigo-600 border border-indigo-200 rounded hover:bg-indigo-100 disabled:opacity-50 transition-colors"
+                      title="Show and copy the inbound endpoint URL for this trigger"
+                      aria-label={`Copy endpoint URL for ${p.id}`}
+                    >
+                      {copiedId === p.id ? '✓ Copied!' : '🔗 URL'}
+                    </button>
+                  )}
                   <button
                     onClick={() => onEditProcess(p.id)}
                     disabled={busyId === p.id}
