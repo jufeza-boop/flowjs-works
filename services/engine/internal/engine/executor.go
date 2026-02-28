@@ -358,3 +358,20 @@ func (e *ProcessExecutor) sendAuditLog(executionID, nodeID, nodeType, status str
 		log.Printf("Failed to publish audit log: %v", err)
 	}
 }
+
+// SendLifecycleAuditLog emits a NATS audit event for deployment lifecycle
+// actions (deploy / stop). processID is used as the node_id; action should
+// be "deployed" or "stopped". When errorMsg is non-empty the status is set to
+// "error", otherwise to "success".
+func (e *ProcessExecutor) SendLifecycleAuditLog(processID, triggerType, action, errorMsg string) {
+	status := "success"
+	if errorMsg != "" {
+		status = "error"
+	}
+	input := map[string]interface{}{
+		"action":      action,
+		"process_id":  processID,
+		"trigger_type": triggerType,
+	}
+	e.sendAuditLog(uuid.New().String(), processID, "lifecycle", status, input, nil, errorMsg)
+}

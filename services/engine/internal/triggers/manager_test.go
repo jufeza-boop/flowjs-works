@@ -82,6 +82,22 @@ func TestManager_RedeployStopsOld(t *testing.T) {
 	assert.True(t, mgr.IsRunning("p3"))
 }
 
+func TestManager_TriggerType(t *testing.T) {
+	exec := &mockExecutor{}
+	mgr := NewManager(exec)
+
+	// Not deployed → empty string
+	assert.Equal(t, "", mgr.TriggerType("p-unknown"))
+
+	proc := buildProcess("p-manual", "manual", nil)
+	require.NoError(t, mgr.Deploy(proc))
+	assert.Equal(t, "manual", mgr.TriggerType("p-manual"))
+
+	// After stop, should return empty string again
+	require.NoError(t, mgr.Stop("p-manual"))
+	assert.Equal(t, "", mgr.TriggerType("p-manual"))
+}
+
 // ---------------------------------------------------------------------------
 // Cron trigger tests
 // ---------------------------------------------------------------------------

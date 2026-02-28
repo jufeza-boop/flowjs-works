@@ -349,9 +349,9 @@ func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor, store 
 		if len(parts) == 2 {
 			switch parts[1] {
 			case "deploy":
-				handleDeploy(w, r, processID, procStore, triggerMgr)
+				handleDeploy(w, r, processID, procStore, triggerMgr, executor)
 			case "stop":
-				handleStop(w, r, processID, procStore, triggerMgr)
+				handleStop(w, r, processID, procStore, triggerMgr, executor)
 			default:
 				jsonError(w, fmt.Sprintf("unknown sub-resource: %q", parts[1]), http.StatusNotFound)
 			}
@@ -391,7 +391,7 @@ func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor, store 
 }
 
 // handleDeploy starts the trigger for a process and updates its status to "deployed".
-func handleDeploy(w http.ResponseWriter, r *http.Request, processID string, procStore *procstore.ProcessStore, triggerMgr *triggers.Manager) {
+func handleDeploy(w http.ResponseWriter, r *http.Request, processID string, procStore *procstore.ProcessStore, triggerMgr *triggers.Manager, executor *engine.ProcessExecutor) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -407,12 +407,14 @@ func handleDeploy(w http.ResponseWriter, r *http.Request, processID string, proc
 		return
 	}
 	if err := triggerMgr.Deploy(proc); err != nil {
+		executor.SendLifecycleAuditLog(processID, proc.Trigger.Type, "deployed", err.Error())
 		jsonError(w, fmt.Sprintf("deploy trigger: %v", err), http.StatusBadRequest)
 		return
 	}
 	if err := procStore.UpdateStatus(r.Context(), processID, "deployed"); err != nil {
 		log.Printf("engine-server: warning: update status for %q: %v", processID, err)
 	}
+	executor.SendLifecycleAuditLog(processID, proc.Trigger.Type, "deployed", "")
 	jsonOK(w, map[string]string{
 		"process_id": processID,
 		"status":     "deployed",
@@ -421,18 +423,22 @@ func handleDeploy(w http.ResponseWriter, r *http.Request, processID string, proc
 }
 
 // handleStop deactivates the trigger for a process and updates its status to "stopped".
-func handleStop(w http.ResponseWriter, r *http.Request, processID string, procStore *procstore.ProcessStore, triggerMgr *triggers.Manager) {
+func handleStop(w http.ResponseWriter, r *http.Request, processID string, procStore *procstore.ProcessStore, triggerMgr *triggers.Manager, executor *engine.ProcessExecutor) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	// Capture the trigger type before stopping so audit logs carry full context.
+	triggerType := triggerMgr.TriggerType(processID)
 	if err := triggerMgr.Stop(processID); err != nil {
+		executor.SendLifecycleAuditLog(processID, triggerType, "stopped", err.Error())
 		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if err := procStore.UpdateStatus(r.Context(), processID, "stopped"); err != nil {
 		log.Printf("engine-server: warning: update status for %q: %v", processID, err)
 	}
+	executor.SendLifecycleAuditLog(processID, triggerType, "stopped", "")
 	jsonOK(w, map[string]string{
 		"process_id": processID,
 		"status":     "stopped",

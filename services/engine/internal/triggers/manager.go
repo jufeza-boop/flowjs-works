@@ -100,6 +100,17 @@ func (m *Manager) IsRunning(processID string) bool {
 	return ok
 }
 
+// TriggerType returns the trigger type string for a currently-deployed process,
+// or an empty string if the process is not running.
+func (m *Manager) TriggerType(processID string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if h, ok := m.running[processID]; ok {
+		return h.Type()
+	}
+	return ""
+}
+
 // StopAll deactivates every running trigger. Useful during shutdown.
 func (m *Manager) StopAll() {
 	m.mu.Lock()
