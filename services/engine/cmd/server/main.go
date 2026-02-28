@@ -388,6 +388,10 @@ func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor, store 
 	// Mount the REST trigger registry so deployed REST-triggered processes
 	// receive inbound HTTP calls at /triggers/{path}.
 	mux.Handle("/triggers/", triggers.GetRegistryHandler())
+
+	// Mount the SOAP trigger registry so deployed SOAP-triggered processes
+	// receive inbound SOAP/XML calls at /soap/{path}.
+	mux.Handle("/soap/", triggers.GetSOAPRegistryHandler())
 }
 
 // handleDeploy starts the trigger for a process and updates its status to "deployed".

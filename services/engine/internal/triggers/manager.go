@@ -134,6 +134,8 @@ func (m *Manager) newHandler(proc *models.Process) (TriggerHandler, error) {
 		return newMCPTrigger(m.executor), nil
 	case "rest":
 		return newRESTTrigger(m.executor), nil
+	case "soap":
+		return newSOAPTrigger(m.executor), nil
 	case "manual":
 		return &manualTrigger{}, nil
 	default:
