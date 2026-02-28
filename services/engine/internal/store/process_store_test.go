@@ -87,7 +87,6 @@ func TestProcessRecord_JSON(t *testing.T) {
 	assert.Contains(t, m, "updated_at")
 }
 
-
 func TestProcessStore_Upsert_NilDB(t *testing.T) {
 	t.Skip("nil DB causes a panic from database/sql; integration tests cover this path")
 }

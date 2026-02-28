@@ -123,8 +123,7 @@ export function DesignerCanvas({ onSelectionChange, onNodesChange, onEdgesChange
     propagateNodes(graphToLoad.nodes)
     propagateEdges(graphToLoad.edges)
     onGraphLoaded?.()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graphToLoad])
+  }, [graphToLoad, setNodes, setEdges, propagateNodes, propagateEdges, onGraphLoaded])
 
   const onConnect = useCallback(
     (connection: Connection) => {

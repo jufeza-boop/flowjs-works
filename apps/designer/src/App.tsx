@@ -132,6 +132,8 @@ export default function App() {
     }
   }, [])
 
+  const handleGraphLoaded = useCallback(() => setGraphToLoad(null), [])
+
   return (
     <div className="h-screen w-screen flex flex-col bg-white overflow-hidden">
       {/* Top bar */}
@@ -217,7 +219,7 @@ export default function App() {
                 onNodesChange={setNodes}
                 onEdgesChange={setEdges}
                 graphToLoad={graphToLoad}
-                onGraphLoaded={() => setGraphToLoad(null)}
+                onGraphLoaded={handleGraphLoaded}
               />
               <ConfigPanel selectedNode={selectedNode} onNodeUpdate={handleNodeUpdate} allNodes={nodes as DesignerNode[]} />
             </ReactFlowProvider>
@@ -225,7 +227,7 @@ export default function App() {
         ) : view === 'history' ? (
           <ExecutionHistory />
         ) : view === 'deployments' ? (
-          <ProcessManager nodes={nodes} edges={edges} definition={definition} onEditProcess={(id) => void handleEditProcess(id)} />
+          <ProcessManager nodes={nodes} edges={edges} definition={definition} onEditProcess={handleEditProcess} />
         ) : (
           <SecretsManager />
         )}
