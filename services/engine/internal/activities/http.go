@@ -64,6 +64,18 @@ func (a *HTTPActivity) Execute(input map[string]interface{}, config map[string]i
 
 	// Set headers
 	req.Header.Set("Content-Type", "application/json")
+
+	// Auth injection from secrets: token → Bearer header, user+password → Basic auth.
+	// Headers set via input["headers"] or config["headers"] below take priority and can
+	// override this injected Authorization header.
+	if token, ok := config["token"].(string); ok && token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	} else if user, ok := config["user"].(string); ok && user != "" {
+		if pass, _ := config["password"].(string); pass != "" {
+			req.SetBasicAuth(user, pass)
+		}
+	}
+
 	if headers, ok := input["headers"].(map[string]interface{}); ok {
 		for key, value := range headers {
 			if strVal, ok := value.(string); ok {

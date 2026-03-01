@@ -22,6 +22,15 @@ const (
 	SecretTypeToken            SecretType = "token"
 	SecretTypeCertificate      SecretType = "certificate"
 	SecretTypeConnectionString SecretType = "connection_string"
+	// SecretTypeAWSCredentials is used for S3 nodes.
+	// Fields: access_key_id, secret_access_key, session_token (optional).
+	SecretTypeAWSCredentials SecretType = "aws_credentials"
+	// SecretTypeSSHKey is used for SFTP nodes with private-key authentication.
+	// Fields: user, private_key.
+	SecretTypeSSHKey SecretType = "ssh_key"
+	// SecretTypeAMQPURL is used for RabbitMQ nodes.
+	// Fields: url_amqp (full AMQP URL including credentials).
+	SecretTypeAMQPURL SecretType = "amqp_url"
 )
 
 // SecretMeta contains non-sensitive metadata returned by List.

@@ -189,6 +189,9 @@ func TestSecretTypeConstants(t *testing.T) {
 	assert.Equal(t, SecretType("token"), SecretTypeToken)
 	assert.Equal(t, SecretType("certificate"), SecretTypeCertificate)
 	assert.Equal(t, SecretType("connection_string"), SecretTypeConnectionString)
+	assert.Equal(t, SecretType("aws_credentials"), SecretTypeAWSCredentials)
+	assert.Equal(t, SecretType("ssh_key"), SecretTypeSSHKey)
+	assert.Equal(t, SecretType("amqp_url"), SecretTypeAMQPURL)
 }
 
 // ---------------------------------------------------------------------------

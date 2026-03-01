@@ -6,7 +6,14 @@
 // =============================================================================
 
 /** Supported secret credential categories */
-export type SecretType = 'basic_auth' | 'token' | 'certificate' | 'connection_string'
+export type SecretType =
+  | 'basic_auth'
+  | 'token'
+  | 'certificate'
+  | 'connection_string'
+  | 'aws_credentials'
+  | 'ssh_key'
+  | 'amqp_url'
 
 /** Non-sensitive secret metadata returned by GET /api/v1/secrets */
 export interface SecretMeta {

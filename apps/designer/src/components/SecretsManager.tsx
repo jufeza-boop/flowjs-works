@@ -2,17 +2,26 @@ import { useState, useEffect, useCallback } from 'react'
 import type { SecretMeta, SecretInput, SecretType } from '../types/secrets'
 import { listSecrets, createSecret, deleteSecret } from '../lib/api'
 
-const SECRET_TYPES: SecretType[] = ['basic_auth', 'token', 'certificate', 'connection_string']
+const SECRET_TYPES: SecretType[] = ['basic_auth', 'token', 'certificate', 'connection_string', 'aws_credentials', 'ssh_key', 'amqp_url']
 
 /** Fields shown per secret type when creating a new secret */
 const SECRET_VALUE_FIELDS: Record<SecretType, string[]> = {
-  basic_auth: ['username', 'password'],
+  // user (not username) matches what SFTP, SMB, Mail, and SQL activities expect
+  basic_auth: ['user', 'password'],
   token: ['token'],
   certificate: ['cert', 'key'],
   connection_string: ['connection_string'],
+  // aws_credentials: matches S3 activity (access_key_id, secret_access_key, session_token)
+  aws_credentials: ['access_key_id', 'secret_access_key', 'session_token'],
+  // ssh_key: matches SFTP private-key auth (user, private_key)
+  ssh_key: ['user', 'private_key'],
+  // amqp_url: matches RabbitMQ activity (url_amqp with embedded credentials)
+  amqp_url: ['url_amqp'],
 }
 
-const DEFAULT_TYPE: SecretType = 'token'
+/** Fields that are optional within their secret type */
+const OPTIONAL_FIELDS = new Set<string>(['session_token'])
+
 
 /** Blank form state */
 function emptyForm(): { id: string; name: string; type: SecretType; values: Record<string, string> } {
@@ -170,9 +179,14 @@ export function SecretsManager() {
               </label>
               {valueFields.map((field) => (
                 <div key={field}>
-                  <label className={labelClass}>{field}</label>
+                  <label className={labelClass}>
+                    {field}
+                    {OPTIONAL_FIELDS.has(field) && (
+                      <span className="text-gray-400 font-normal ml-1">(optional)</span>
+                    )}
+                  </label>
                   <input
-                    type={field === 'password' || field === 'token' || field === 'key' ? 'password' : 'text'}
+                    type={field === 'password' || field === 'token' || field === 'key' || field === 'private_key' || field === 'secret_access_key' ? 'password' : 'text'}
                     value={form.values[field] ?? ''}
                     onChange={(e) => handleValueChange(field, e.target.value)}
                     className={inputClass}
