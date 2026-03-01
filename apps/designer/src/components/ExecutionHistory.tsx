@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { Execution, ActivityLog } from '../types/audit'
-import { fetchExecutions, fetchActivityLogs } from '../lib/api'
+import { fetchExecutions, fetchActivityLogs, fetchTriggerData, replayExecution, replayFromNode } from '../lib/api'
+
+const LIMIT = 20
 
 // ---------------------------------------------------------------------------
 // JSON Viewer — lightweight recursive renderer
@@ -87,15 +89,17 @@ function StatusBadge({ status }: { status: string }) {
 
 interface LogDetailPanelProps {
   executionId: string
+  flowId: string
   onClose: () => void
 }
 
-function LogDetailPanel({ executionId, onClose }: LogDetailPanelProps) {
+function LogDetailPanel({ executionId, flowId, onClose }: LogDetailPanelProps) {
   const [logs, setLogs] = useState<ActivityLog[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedLog, setSelectedLog] = useState<ActivityLog | null>(null)
   const [activeTab, setActiveTab] = useState<'input' | 'output' | 'error'>('input')
+  const [resumeStatus, setResumeStatus] = useState<{ nodeId: string; success: boolean } | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -145,17 +149,40 @@ function LogDetailPanel({ executionId, onClose }: LogDetailPanelProps) {
                 <p className="p-4 text-xs text-gray-400">No activity logs found.</p>
               ) : (
                 logs.map((log) => (
-                  <button
-                    key={log.log_id}
-                    onClick={() => setSelectedLog(log)}
-                    className={`w-full text-left px-3 py-2 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                      selectedLog?.log_id === log.log_id ? 'bg-blue-50' : ''
-                    }`}
-                  >
-                    <p className="text-xs font-medium text-gray-800 truncate">{log.node_id}</p>
-                    <p className="text-xs text-gray-400 truncate">{log.node_type}</p>
-                    <StatusBadge status={log.status} />
-                  </button>
+                  <div key={log.log_id} className="border-b border-gray-100">
+                    <button
+                      onClick={() => setSelectedLog(log)}
+                      className={`w-full text-left px-3 py-2 hover:bg-gray-50 transition-colors ${
+                        selectedLog?.log_id === log.log_id ? 'bg-blue-50' : ''
+                      }`}
+                    >
+                      <p className="text-xs font-medium text-gray-800 truncate">{log.node_id}</p>
+                      <p className="text-xs text-gray-400 truncate">{log.node_type}</p>
+                      <StatusBadge status={log.status} />
+                    </button>
+                    <div className="px-3 pb-2">
+                      <button
+                        onClick={() => {
+                          setResumeStatus(null)
+                          const inputObj =
+                            log.input_data !== null && typeof log.input_data === 'object' && !Array.isArray(log.input_data)
+                              ? (log.input_data as Record<string, unknown>)
+                              : {}
+                          replayFromNode(flowId, log.node_id, inputObj)
+                            .then(() => setResumeStatus({ nodeId: log.node_id, success: true }))
+                            .catch(() => setResumeStatus({ nodeId: log.node_id, success: false }))
+                        }}
+                        className="text-xs text-indigo-500 hover:text-indigo-700 transition-colors"
+                      >
+                        ▶ Resume
+                      </button>
+                      {resumeStatus?.nodeId === log.node_id && (
+                        <span className={`ml-2 text-xs ${resumeStatus.success ? 'text-green-600' : 'text-red-500'}`}>
+                          {resumeStatus.success ? '✓ Replayed' : '✗ Error'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 ))
               )}
             </div>
@@ -219,33 +246,105 @@ export function ExecutionHistory() {
   const [executions, setExecutions] = useState<Execution[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null)
+  const [selectedExecution, setSelectedExecution] = useState<Execution | null>(null)
+  const [statusFilter, setStatusFilter] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
+  const [offset, setOffset] = useState(0)
+  const [replayMessage, setReplayMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
-  const load = useCallback(() => {
+  const load = useCallback((currentOffset: number, currentStatus: string, currentSearch: string) => {
     setLoading(true)
     setError(null)
-    fetchExecutions()
+    fetchExecutions({
+      status: currentStatus || undefined,
+      search: currentSearch || undefined,
+      limit: LIMIT,
+      offset: currentOffset,
+    })
       .then(setExecutions)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false))
   }, [])
 
   useEffect(() => {
-    load()
-  }, [load])
+    load(offset, statusFilter, search)
+  }, [load, offset, statusFilter, search])
+
+  function handleStatusChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    setStatusFilter(e.target.value)
+    setOffset(0)
+  }
+
+  function triggerSearch() {
+    setSearch(searchInput)
+    setOffset(0)
+  }
+
+  function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') triggerSearch()
+  }
+
+  async function handleReplay(e: React.MouseEvent, exec: Execution) {
+    e.stopPropagation()
+    setReplayMessage(null)
+    try {
+      const triggerData = await fetchTriggerData(exec.execution_id)
+      await replayExecution(exec.flow_id, triggerData)
+      setReplayMessage({ type: 'success', text: `Replay started for ${exec.execution_id}` })
+    } catch (err) {
+      setReplayMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) })
+    }
+  }
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-white">
       {/* Panel header */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 bg-white shadow-sm">
-        <h2 className="text-sm font-semibold text-gray-700">Execution History</h2>
-        <button
-          onClick={load}
-          className="text-xs text-blue-500 hover:text-blue-700 transition-colors"
-          disabled={loading}
-        >
-          {loading ? 'Loading…' : '↻ Refresh'}
-        </button>
+      <div className="flex flex-col gap-2 px-5 py-3 border-b border-gray-200 bg-white shadow-sm">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-700">Execution History</h2>
+          <button
+            onClick={() => load(offset, statusFilter, search)}
+            className="text-xs text-blue-500 hover:text-blue-700 transition-colors"
+            disabled={loading}
+          >
+            {loading ? 'Loading…' : '↻ Refresh'}
+          </button>
+        </div>
+        {/* Filters row */}
+        <div className="flex items-center gap-2">
+          <select
+            value={statusFilter}
+            onChange={handleStatusChange}
+            className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
+          >
+            <option value="">All statuses</option>
+            <option value="STARTED">STARTED</option>
+            <option value="COMPLETED">COMPLETED</option>
+            <option value="FAILED">FAILED</option>
+            <option value="REPLAYED">REPLAYED</option>
+          </select>
+          <input
+            type="text"
+            placeholder="Search input/output data…"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
+            className="text-xs border border-gray-200 rounded px-2 py-1 flex-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+          />
+          <button
+            onClick={triggerSearch}
+            className="text-xs bg-blue-50 text-blue-600 border border-blue-200 rounded px-3 py-1 hover:bg-blue-100 transition-colors"
+          >
+            Search
+          </button>
+        </div>
+        {/* Replay message */}
+        {replayMessage && (
+          <div className={`text-xs px-2 py-1 rounded ${replayMessage.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+            {replayMessage.text}
+          </div>
+        )}
       </div>
 
       {/* Content */}
@@ -259,7 +358,7 @@ export function ExecutionHistory() {
           <div className="flex flex-col items-center justify-center h-full gap-3">
             <p className="text-sm text-red-500">{error}</p>
             <button
-              onClick={load}
+              onClick={() => load(offset, statusFilter, search)}
               className="text-xs bg-red-50 text-red-600 border border-red-200 rounded px-3 py-1.5 hover:bg-red-100 transition-colors"
             >
               Retry
@@ -290,7 +389,7 @@ export function ExecutionHistory() {
                 <tr
                   key={exec.execution_id}
                   className={`hover:bg-blue-50 transition-colors cursor-pointer ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}
-                  onClick={() => setSelectedExecutionId(exec.execution_id)}
+                  onClick={() => setSelectedExecution(exec)}
                 >
                   <td className="px-4 py-2 font-mono text-gray-600 max-w-[160px] truncate">
                     {exec.execution_id}
@@ -303,15 +402,21 @@ export function ExecutionHistory() {
                   <td className="px-4 py-2 text-gray-500">
                     {exec.start_time ? new Date(exec.start_time).toLocaleString() : '—'}
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-4 py-2 flex items-center gap-2">
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
-                        setSelectedExecutionId(exec.execution_id)
+                        setSelectedExecution(exec)
                       }}
                       className="text-blue-500 hover:text-blue-700 transition-colors"
                     >
                       View logs →
+                    </button>
+                    <button
+                      onClick={(e) => { void handleReplay(e, exec) }}
+                      className="text-indigo-500 hover:text-indigo-700 transition-colors"
+                    >
+                      ↺ Replay
                     </button>
                   </td>
                 </tr>
@@ -321,11 +426,33 @@ export function ExecutionHistory() {
         )}
       </div>
 
+      {/* Pagination */}
+      {!loading && !error && (
+        <div className="flex items-center justify-between px-5 py-2 border-t border-gray-200 bg-white text-xs text-gray-500">
+          <button
+            onClick={() => setOffset((o) => Math.max(0, o - LIMIT))}
+            disabled={offset === 0}
+            className="px-3 py-1 rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50 transition-colors"
+          >
+            ← Previous
+          </button>
+          <span>Page {Math.floor(offset / LIMIT) + 1}</span>
+          <button
+            onClick={() => setOffset((o) => o + LIMIT)}
+            disabled={executions.length < LIMIT}
+            className="px-3 py-1 rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50 transition-colors"
+          >
+            Next →
+          </button>
+        </div>
+      )}
+
       {/* Log detail modal */}
-      {selectedExecutionId && (
+      {selectedExecution && (
         <LogDetailPanel
-          executionId={selectedExecutionId}
-          onClose={() => setSelectedExecutionId(null)}
+          executionId={selectedExecution.execution_id}
+          flowId={selectedExecution.flow_id}
+          onClose={() => setSelectedExecution(null)}
         />
       )}
     </div>
