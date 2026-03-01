@@ -134,7 +134,91 @@ func (e *ProcessExecutor) Execute(process *models.Process, triggerData map[strin
 	return ctx, nil
 }
 
-// isSequentialMode returns true when no transitions and no Next fields are defined.
+// ExecuteFromNode re-executes the process starting from startNodeID,
+// injecting nodeInput as the pre-resolved input for that node.
+// A new execution_id is generated unless executionIDHint is non-empty.
+func (e *ProcessExecutor) ExecuteFromNode(
+	process *models.Process,
+	startNodeID string,
+	nodeInput map[string]interface{},
+	executionIDHint string,
+) (*models.ExecutionContext, error) {
+	executionID := executionIDHint
+	if executionID == "" {
+		executionID = uuid.New().String()
+	}
+	processID := process.Definition.ID
+	log.Printf("Starting replay execution %s for process %s from node %s", executionID, processID, startNodeID)
+
+	ctx := models.NewExecutionContext(executionID)
+	ctx.ProcessID = processID
+	ctx.SetTriggerData(map[string]interface{}{})
+
+	// Emit execution-start audit event.
+	e.sendAuditLog(executionID, processID, processID, "process", "started",
+		map[string]interface{}{"replay_from": startNodeID}, nil, "")
+
+	// Build nodeMap and transMap.
+	nodeMap := make(map[string]*models.Node, len(process.Nodes))
+	for i := range process.Nodes {
+		nodeMap[process.Nodes[i].ID] = &process.Nodes[i]
+	}
+	transMap := make(map[string][]models.Transition)
+	for _, t := range process.Transitions {
+		transMap[t.From] = append(transMap[t.From], t)
+	}
+
+	// Inject the start node's output and mark it as replayed so it is skipped.
+	ctx.SetNodeOutput(startNodeID, nodeInput)
+	ctx.SetNodeStatus(startNodeID, "replayed")
+
+	// Follow transitions from the start node (mirroring executeChain routing,
+	// but without re-executing the start node itself).
+	visited := make(map[string]bool)
+	visited[startNodeID] = true
+
+	var condTrans, noCondTrans, successTrans []models.Transition
+	for _, t := range transMap[startNodeID] {
+		switch t.Type {
+		case "condition":
+			condTrans = append(condTrans, t)
+		case "nocondition":
+			noCondTrans = append(noCondTrans, t)
+		case "success":
+			successTrans = append(successTrans, t)
+		}
+	}
+
+	if len(condTrans) > 0 || len(noCondTrans) > 0 {
+		for _, t := range condTrans {
+			if evaluateCondition(t.Condition, ctx) {
+				if err := e.executeChain(t.To, nodeMap, transMap, ctx, visited); err != nil {
+					return ctx, err
+				}
+				log.Printf("Replay execution %s completed successfully", executionID)
+				return ctx, nil
+			}
+		}
+		for _, t := range noCondTrans {
+			if err := e.executeChain(t.To, nodeMap, transMap, ctx, visited); err != nil {
+				return ctx, err
+			}
+		}
+		log.Printf("Replay execution %s completed successfully", executionID)
+		return ctx, nil
+	}
+
+	for _, t := range successTrans {
+		if err := e.executeChain(t.To, nodeMap, transMap, ctx, visited); err != nil {
+			return ctx, err
+		}
+	}
+
+	log.Printf("Replay execution %s completed successfully", executionID)
+	return ctx, nil
+}
+
+
 func isSequentialMode(process *models.Process) bool {
 	if len(process.Transitions) > 0 {
 		return false

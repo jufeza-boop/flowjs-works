@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -105,19 +107,85 @@ func registerRoutes(mux *http.ServeMux, rawDB *sql.DB) {
 		jsonOK(w, map[string]string{"status": "ok", "service": "audit-logger"})
 	})
 
-	// GET /executions — list all execution headers (most recent first)
+	// GET /executions — list execution headers with optional filtering and pagination.
+	// Query params:
+	//   ?status=STARTED|COMPLETED|FAILED|REPLAYED — filter by status
+	//   ?search=<text>                             — full-text search over activity_logs JSONB
+	//   ?limit=<n>  (default 50, max 200)
+	//   ?offset=<n> (default 0)
+	// Response header X-Total-Count holds the total matching row count.
 	mux.HandleFunc("/executions", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		rows, err := rawDB.Query(`
-			SELECT execution_id, flow_id, COALESCE(version,''), status,
-			       COALESCE(correlation_id,''), start_time,
-			       COALESCE(trigger_type,''), COALESCE(main_error_message,'')
-			FROM executions
-			ORDER BY start_time DESC
-			LIMIT 200`)
+
+		q := r.URL.Query()
+		statusFilter := q.Get("status")
+		searchFilter := q.Get("search")
+
+		limit := 50
+		if s := q.Get("limit"); s != "" {
+			if n, err := strconv.Atoi(s); err == nil && n > 0 {
+				if n > 200 {
+					n = 200
+				}
+				limit = n
+			}
+		}
+		offset := 0
+		if s := q.Get("offset"); s != "" {
+			if n, err := strconv.Atoi(s); err == nil && n >= 0 {
+				offset = n
+			}
+		}
+
+		// Build dynamic WHERE clause.
+		var whereParts []string
+		var args []interface{}
+
+		if statusFilter != "" {
+			args = append(args, statusFilter)
+			whereParts = append(whereParts, fmt.Sprintf("e.status = $%d", len(args)))
+		}
+		if searchFilter != "" {
+			args = append(args, searchFilter)
+			whereParts = append(whereParts, fmt.Sprintf(
+				"EXISTS (SELECT 1 FROM activity_logs al WHERE al.execution_id = e.execution_id"+
+					" AND (al.input_data::text ILIKE '%%' || $%d || '%%'"+
+					" OR al.output_data::text ILIKE '%%' || $%d || '%%'))",
+				len(args), len(args),
+			))
+		}
+
+		whereSQL := ""
+		if len(whereParts) > 0 {
+			whereSQL = "WHERE " + strings.Join(whereParts, " AND ")
+		}
+
+		// Total matching count for X-Total-Count header.
+		var total int
+		countQuery := fmt.Sprintf("SELECT COUNT(*) FROM executions e %s", whereSQL)
+		if err := rawDB.QueryRowContext(r.Context(), countQuery, args...).Scan(&total); err != nil {
+			jsonError(w, "count executions: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Paginated data query.
+		paginatedArgs := make([]interface{}, len(args)+2)
+		copy(paginatedArgs, args)
+		paginatedArgs[len(args)] = limit
+		paginatedArgs[len(args)+1] = offset
+		dataQuery := fmt.Sprintf(`
+			SELECT e.execution_id, e.flow_id, COALESCE(e.version,''), e.status,
+			       COALESCE(e.correlation_id,''), e.start_time,
+			       COALESCE(e.trigger_type,''), COALESCE(e.main_error_message,'')
+			FROM executions e
+			%s
+			ORDER BY e.start_time DESC
+			LIMIT $%d OFFSET $%d`, whereSQL, len(paginatedArgs)-1, len(paginatedArgs))
+
+		rows, err := rawDB.QueryContext(r.Context(), dataQuery, paginatedArgs...)
 		if err != nil {
 			jsonError(w, "query executions: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -151,77 +219,116 @@ func registerRoutes(mux *http.ServeMux, rawDB *sql.DB) {
 		if results == nil {
 			results = []ExecutionRow{}
 		}
+
+		w.Header().Set("X-Total-Count", strconv.Itoa(total))
 		jsonOK(w, results)
 	})
 
-	// GET /executions/{id}/logs — list activity logs for a specific execution
+	// GET /executions/{id}/logs         — list activity logs for a specific execution
+	// GET /executions/{id}/trigger-data  — return the trigger input_data for an execution
 	mux.HandleFunc("/executions/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		// Parse execution_id from path: /executions/{id}/logs
-		path := r.URL.Path
-		var executionID string
-		if _, err := fmt.Sscanf(path, "/executions/%36s", &executionID); err != nil || executionID == "" {
+
+		// Parse execution_id and optional sub-resource from path.
+		rest := strings.TrimPrefix(r.URL.Path, "/executions/")
+		var executionID, subResource string
+		if idx := strings.Index(rest, "/"); idx >= 0 {
+			executionID = rest[:idx]
+			subResource = strings.ToLower(rest[idx+1:])
+		} else {
+			executionID = rest
+			subResource = "logs"
+		}
+		if executionID == "" {
 			http.Error(w, "missing execution_id", http.StatusBadRequest)
 			return
 		}
-		// Trim trailing /logs if present
-		if len(executionID) > 5 && executionID[len(executionID)-5:] == "/logs" {
-			executionID = executionID[:len(executionID)-5]
-		}
 
-		rows, err := rawDB.Query(`
-			SELECT log_id, node_id, COALESCE(node_type,''), status,
-			       input_data, output_data, error_details,
-			       COALESCE(duration_ms,0), created_at
-			FROM activity_logs
-			WHERE execution_id = $1
-			ORDER BY created_at ASC`, executionID)
-		if err != nil {
-			jsonError(w, "query activity_logs: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		defer rows.Close()
-
-		type LogRow struct {
-			LogID        int64           `json:"log_id"`
-			NodeID       string          `json:"node_id"`
-			NodeType     string          `json:"node_type"`
-			Status       string          `json:"status"`
-			InputData    json.RawMessage `json:"input_data"`
-			OutputData   json.RawMessage `json:"output_data"`
-			ErrorDetails json.RawMessage `json:"error_details"`
-			DurationMs   int             `json:"duration_ms"`
-			CreatedAt    string          `json:"created_at"`
-		}
-		var results []LogRow
-		for rows.Next() {
-			var lr LogRow
-			var (
-				inputRaw  []byte
-				outputRaw []byte
-				errorRaw  []byte
-				createdAt time.Time
-			)
-			if err := rows.Scan(
-				&lr.LogID, &lr.NodeID, &lr.NodeType, &lr.Status,
-				&inputRaw, &outputRaw, &errorRaw, &lr.DurationMs, &createdAt,
-			); err != nil {
-				jsonError(w, "scan log: "+err.Error(), http.StatusInternalServerError)
+		switch subResource {
+		case "logs", "":
+			rows, err := rawDB.QueryContext(r.Context(), `
+				SELECT log_id, node_id, COALESCE(node_type,''), status,
+				       input_data, output_data, error_details,
+				       COALESCE(duration_ms,0), created_at
+				FROM activity_logs
+				WHERE execution_id = $1
+				ORDER BY created_at ASC`, executionID)
+			if err != nil {
+				jsonError(w, "query activity_logs: "+err.Error(), http.StatusInternalServerError)
 				return
 			}
-			lr.CreatedAt = createdAt.Format(time.RFC3339)
-			lr.InputData = nullableJSON(inputRaw)
-			lr.OutputData = nullableJSON(outputRaw)
-			lr.ErrorDetails = nullableJSON(errorRaw)
-			results = append(results, lr)
+			defer rows.Close()
+
+			type LogRow struct {
+				LogID        int64           `json:"log_id"`
+				NodeID       string          `json:"node_id"`
+				NodeType     string          `json:"node_type"`
+				Status       string          `json:"status"`
+				InputData    json.RawMessage `json:"input_data"`
+				OutputData   json.RawMessage `json:"output_data"`
+				ErrorDetails json.RawMessage `json:"error_details"`
+				DurationMs   int             `json:"duration_ms"`
+				CreatedAt    string          `json:"created_at"`
+			}
+			var results []LogRow
+			for rows.Next() {
+				var lr LogRow
+				var (
+					inputRaw  []byte
+					outputRaw []byte
+					errorRaw  []byte
+					createdAt time.Time
+				)
+				if err := rows.Scan(
+					&lr.LogID, &lr.NodeID, &lr.NodeType, &lr.Status,
+					&inputRaw, &outputRaw, &errorRaw, &lr.DurationMs, &createdAt,
+				); err != nil {
+					jsonError(w, "scan log: "+err.Error(), http.StatusInternalServerError)
+					return
+				}
+				lr.CreatedAt = createdAt.Format(time.RFC3339)
+				lr.InputData = nullableJSON(inputRaw)
+				lr.OutputData = nullableJSON(outputRaw)
+				lr.ErrorDetails = nullableJSON(errorRaw)
+				results = append(results, lr)
+			}
+			if results == nil {
+				results = []LogRow{}
+			}
+			jsonOK(w, results)
+
+		case "trigger-data":
+			// Return the input_data of the process-start activity log entry.
+			var inputRaw []byte
+			err := rawDB.QueryRowContext(r.Context(), `
+				SELECT input_data
+				FROM activity_logs
+				WHERE execution_id = $1
+				  AND node_type = 'process'
+				  AND status = 'started'
+				ORDER BY created_at ASC
+				LIMIT 1`, executionID).Scan(&inputRaw)
+			if err == sql.ErrNoRows {
+				jsonError(w, "trigger data not found for execution "+executionID, http.StatusNotFound)
+				return
+			}
+			if err != nil {
+				jsonError(w, "query trigger data: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			if len(inputRaw) == 0 {
+				_, _ = w.Write([]byte("null"))
+			} else {
+				_, _ = w.Write(inputRaw)
+			}
+
+		default:
+			jsonError(w, fmt.Sprintf("unknown sub-resource: %q", subResource), http.StatusNotFound)
 		}
-		if results == nil {
-			results = []LogRow{}
-		}
-		jsonOK(w, results)
 	})
 }
 
