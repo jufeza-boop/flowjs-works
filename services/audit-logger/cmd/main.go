@@ -301,14 +301,15 @@ func registerRoutes(mux *http.ServeMux, rawDB *sql.DB) {
 			jsonOK(w, results)
 
 		case "trigger-data":
-			// Return the input_data of the process-start activity log entry.
+			// Return the original trigger payload stored with the process-start audit event.
+			// We extract input_data->'trigger' to get just the trigger data, not the wrapper object.
 			var inputRaw []byte
 			err := rawDB.QueryRowContext(r.Context(), `
-				SELECT input_data
+				SELECT COALESCE(input_data->'trigger', '{}')
 				FROM activity_logs
 				WHERE execution_id = $1
 				  AND node_type = 'process'
-				  AND status = 'started'
+				  AND status = 'STARTED'
 				ORDER BY created_at ASC
 				LIMIT 1`, executionID).Scan(&inputRaw)
 			if err == sql.ErrNoRows {
@@ -320,10 +321,12 @@ func registerRoutes(mux *http.ServeMux, rawDB *sql.DB) {
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			if len(inputRaw) == 0 {
-				_, _ = w.Write([]byte("null"))
-			} else {
-				_, _ = w.Write(inputRaw)
+			payload := inputRaw
+			if len(payload) == 0 {
+				payload = []byte("{}")
+			}
+			if _, writeErr := w.Write(payload); writeErr != nil {
+				log.Printf("audit-logger: write trigger-data response: %v", writeErr)
 			}
 
 		default:

@@ -606,3 +606,59 @@ func TestExecuteFromNode_ConditionRouting(t *testing.T) {
 	_, falseErr := ctx.GetValue("$.nodes.on_false.status")
 	assert.Error(t, falseErr, "on_false should not have run when condition is true")
 }
+
+// ---------------------------------------------------------------------------
+// Terminal-event / named-return tests
+// ---------------------------------------------------------------------------
+
+// TestExecute_SuccessReturnsNilError confirms that a successful execution
+// returns a nil error (which causes the deferred COMPLETED audit event to fire).
+func TestExecute_SuccessReturnsNilError(t *testing.T) {
+exec := newTestExecutor(t)
+process := models.Process{
+Definition: models.Definition{ID: "terminal-ok", Version: "1.0.0", Name: "terminal-ok"},
+Trigger:    models.Trigger{ID: "trg_01", Type: "manual"},
+Nodes: []models.Node{
+{ID: "log_1", Type: "logger", Config: map[string]interface{}{"level": "info"}},
+},
+}
+ctx, err := exec.Execute(&process, map[string]interface{}{})
+require.NoError(t, err, "a successful execution must return nil error (triggers COMPLETED event)")
+assert.NotNil(t, ctx)
+}
+
+// TestExecute_FailureReturnsError confirms that a failing execution returns a
+// non-nil error (which causes the deferred FAILED audit event to fire).
+func TestExecute_FailureReturnsError(t *testing.T) {
+exec := newTestExecutor(t)
+process := models.Process{
+Definition: models.Definition{ID: "terminal-fail", Version: "1.0.0", Name: "terminal-fail"},
+Trigger:    models.Trigger{ID: "trg_01", Type: "manual"},
+Nodes: []models.Node{
+{ID: "bad_node", Type: "nonexistent_activity_type"},
+},
+}
+ctx, err := exec.Execute(&process, map[string]interface{}{})
+assert.Error(t, err, "a failing execution must return non-nil error (triggers FAILED event)")
+assert.NotNil(t, ctx, "context should still be returned on failure")
+}
+
+// TestExecuteFromNode_SuccessReturnsNilError confirms that ExecuteFromNode
+// returns nil error on success (triggers REPLAYED terminal event).
+func TestExecuteFromNode_SuccessReturnsNilError(t *testing.T) {
+exec := newTestExecutor(t)
+process := models.Process{
+Definition: models.Definition{ID: "replay-terminal-ok", Version: "1.0.0", Name: "replay-terminal-ok"},
+Trigger:    models.Trigger{ID: "trg_01", Type: "manual"},
+Nodes: []models.Node{
+{ID: "injected", Type: "logger"},
+{ID: "next_log", Type: "logger", Config: map[string]interface{}{"level": "info"}},
+},
+Transitions: []models.Transition{
+{From: "injected", To: "next_log", Type: "success"},
+},
+}
+ctx, err := exec.ExecuteFromNode(&process, "injected", map[string]interface{}{"ok": true}, "")
+require.NoError(t, err, "successful ExecuteFromNode must return nil error (triggers REPLAYED event)")
+assert.NotNil(t, ctx)
+}
