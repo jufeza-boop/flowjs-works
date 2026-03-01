@@ -36,6 +36,26 @@ assert.Error(t, err)
 assert.Contains(t, err.Error(), "unsupported engine")
 }
 
+// TestBuildDSN_ConnectionStringField verifies that a secret of type connection_string
+// (whose injected field is named "connection_string") is accepted by buildDSN.
+func TestBuildDSN_ConnectionStringField(t *testing.T) {
+config := map[string]interface{}{
+"connection_string": "host=db port=5432 dbname=mydb user=sa password=pass sslmode=disable",
+}
+dsn := buildDSN("postgres", config)
+assert.Equal(t, "host=db port=5432 dbname=mydb user=sa password=pass sslmode=disable", dsn)
+}
+
+// TestBuildDSN_DSNFieldTakesPriority ensures that the explicit "dsn" field wins over "connection_string".
+func TestBuildDSN_DSNFieldTakesPriority(t *testing.T) {
+config := map[string]interface{}{
+"dsn":               "host=explicit",
+"connection_string": "host=fallback",
+}
+dsn := buildDSN("postgres", config)
+assert.Equal(t, "host=explicit", dsn)
+}
+
 func TestSQLActivity_PostgresIntegration(t *testing.T) {
 if os.Getenv("FLOWJS_RUN_EXTERNAL_TESTS") != "1" {
 t.Skip("skipping external test; set FLOWJS_RUN_EXTERNAL_TESTS=1 to enable")

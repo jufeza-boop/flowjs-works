@@ -115,6 +115,10 @@ func buildDSN(engine string, config map[string]interface{}) string {
 if dsn, ok := config["dsn"].(string); ok && dsn != "" {
 return dsn
 }
+// Also support secrets of type connection_string whose value field is named "connection_string".
+if dsn, ok := config["connection_string"].(string); ok && dsn != "" {
+return dsn
+}
 host, _ := config["host"].(string)
 port, _ := config["port"].(string)
 database, _ := config["database"].(string)
