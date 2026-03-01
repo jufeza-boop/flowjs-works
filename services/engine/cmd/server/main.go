@@ -485,18 +485,27 @@ func handleReplay(w http.ResponseWriter, r *http.Request, processID string, proc
 		return
 	}
 
-	var req struct {
-		TriggerData map[string]interface{} `json:"trigger_data"`
+	var reqRaw struct {
+		TriggerData json.RawMessage `json:"trigger_data"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+	if err := json.NewDecoder(r.Body).Decode(&reqRaw); err != nil && !errors.Is(err, io.EOF) {
 		jsonError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
 		return
 	}
-	if req.TriggerData == nil {
-		req.TriggerData = map[string]interface{}{}
+	// Accept any JSON value for trigger_data; default to {} if absent or null.
+	// Return 400 if trigger_data is present but not a JSON object.
+	var triggerData map[string]interface{}
+	if len(reqRaw.TriggerData) > 0 {
+		if err := json.Unmarshal(reqRaw.TriggerData, &triggerData); err != nil || triggerData == nil {
+			jsonError(w, "trigger_data must be a JSON object (got non-object value)", http.StatusBadRequest)
+			return
+		}
+	}
+	if triggerData == nil {
+		triggerData = map[string]interface{}{}
 	}
 
-	ctx, execErr := executor.Execute(proc, req.TriggerData)
+	ctx, execErr := executor.Execute(proc, triggerData)
 	writeFlowResponse(w, ctx, execErr)
 }
 
