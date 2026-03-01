@@ -22,6 +22,8 @@ const SECRET_VALUE_FIELDS: Record<SecretType, string[]> = {
 /** Fields that are optional within their secret type */
 const OPTIONAL_FIELDS = new Set<string>(['session_token'])
 
+/** Default secret type for new secrets */
+const DEFAULT_TYPE: SecretType = 'basic_auth'
 
 /** Blank form state */
 function emptyForm(): { id: string; name: string; type: SecretType; values: Record<string, string> } {
