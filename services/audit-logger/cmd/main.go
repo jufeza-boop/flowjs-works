@@ -308,7 +308,7 @@ func registerRoutes(mux *http.ServeMux, rawDB *sql.DB) {
 				FROM activity_logs
 				WHERE execution_id = $1
 				  AND node_type = 'process'
-				  AND status = 'started'
+				  AND status = 'STARTED'
 				ORDER BY created_at ASC
 				LIMIT 1`, executionID).Scan(&inputRaw)
 			if err == sql.ErrNoRows {
