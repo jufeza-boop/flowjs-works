@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fetchExecutions, fetchActivityLogs, runFlow, listSecrets, createSecret, deleteSecret, listProcesses, saveProcess, deployProcess, stopProcess, deleteProcess, getProcess } from './api'
+import { fetchExecutions, fetchActivityLogs, runFlow, listSecrets, createSecret, deleteSecret, listProcesses, saveProcess, deployProcess, stopProcess, deleteProcess, getProcess, fetchTriggerData, replayExecution, replayFromNode } from './api'
 import type { Execution, ActivityLog } from '../types/audit'
 import type { SecretMeta } from '../types/secrets'
 import type { ProcessSummary } from '../types/deployment'
@@ -382,5 +382,145 @@ describe('getProcess', () => {
     }))
     await getProcess('flow id with spaces').catch(() => undefined)
     expect(capturedUrl).toContain('flow%20id%20with%20spaces')
+  })
+})
+
+// ── Observability & Replay API ────────────────────────────────────────────────
+
+describe('fetchExecutions with options', () => {
+  beforeEach(() => { vi.restoreAllMocks() })
+
+  it('appends status param when provided', async () => {
+    let capturedUrl = ''
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      capturedUrl = url
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
+    }))
+    await fetchExecutions({ status: 'FAILED' })
+    expect(capturedUrl).toContain('status=FAILED')
+  })
+
+  it('appends search param when provided', async () => {
+    let capturedUrl = ''
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      capturedUrl = url
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
+    }))
+    await fetchExecutions({ search: 'hello world' })
+    expect(capturedUrl).toContain('search=hello+world')
+  })
+
+  it('appends limit and offset params when provided', async () => {
+    let capturedUrl = ''
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      capturedUrl = url
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
+    }))
+    await fetchExecutions({ limit: 20, offset: 40 })
+    expect(capturedUrl).toContain('limit=20')
+    expect(capturedUrl).toContain('offset=40')
+  })
+
+  it('does not append params when options are empty', async () => {
+    let capturedUrl = ''
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      capturedUrl = url
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
+    }))
+    await fetchExecutions({})
+    expect(capturedUrl).not.toContain('?')
+  })
+})
+
+describe('fetchTriggerData', () => {
+  beforeEach(() => { vi.restoreAllMocks() })
+
+  it('returns trigger data on success', async () => {
+    const mockData = { event: 'order_placed', amount: 100 }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(mockData) }))
+    const result = await fetchTriggerData('exec-1')
+    expect(result).toEqual(mockData)
+  })
+
+  it('throws on non-ok response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404, text: () => Promise.resolve('not found') }))
+    await expect(fetchTriggerData('exec-missing')).rejects.toThrow('Failed to fetch trigger data (404)')
+  })
+
+  it('URL-encodes the execution id', async () => {
+    let capturedUrl = ''
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      capturedUrl = url
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
+    }))
+    await fetchTriggerData('exec id with spaces')
+    expect(capturedUrl).toContain('exec%20id%20with%20spaces')
+  })
+})
+
+describe('replayExecution', () => {
+  beforeEach(() => { vi.restoreAllMocks() })
+
+  it('returns RunFlowResponse on success', async () => {
+    const mockResponse = { execution_id: 'replay-1', nodes: {} }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(mockResponse) }))
+    const result = await replayExecution('my-flow', { event: 'test' })
+    expect(result.execution_id).toBe('replay-1')
+  })
+
+  it('sends trigger_data in request body', async () => {
+    let capturedBody = ''
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, opts: RequestInit) => {
+      capturedBody = opts.body as string
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ execution_id: 'r1', nodes: {} }) })
+    }))
+    await replayExecution('my-flow', { key: 'value' })
+    const parsed = JSON.parse(capturedBody) as { trigger_data: Record<string, unknown> }
+    expect(parsed.trigger_data).toEqual({ key: 'value' })
+  })
+
+  it('throws on non-ok response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500, json: () => Promise.resolve({ error: 'engine error', execution_id: '', nodes: {} }) }))
+    await expect(replayExecution('my-flow', {})).rejects.toThrow('Replay failed (500)')
+  })
+})
+
+describe('replayFromNode', () => {
+  beforeEach(() => { vi.restoreAllMocks() })
+
+  it('returns RunFlowResponse on success', async () => {
+    const mockResponse = { execution_id: 'partial-1', nodes: {} }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(mockResponse) }))
+    const result = await replayFromNode('my-flow', 'node_1', { x: 1 })
+    expect(result.execution_id).toBe('partial-1')
+  })
+
+  it('sends node_input in request body and uses correct URL', async () => {
+    let capturedUrl = ''
+    let capturedBody = ''
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string, opts: RequestInit) => {
+      capturedUrl = url
+      capturedBody = opts.body as string
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ execution_id: 'r2', nodes: {} }) })
+    }))
+    await replayFromNode('my-flow', 'node_1', { foo: 'bar' })
+    expect(capturedUrl).toContain('/replay-from/node_1')
+    const parsed = JSON.parse(capturedBody) as { node_input: Record<string, unknown> }
+    expect(parsed.node_input).toEqual({ foo: 'bar' })
+  })
+
+  it('URL-encodes the node id', async () => {
+    let capturedUrl = ''
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      capturedUrl = url
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ execution_id: 'r3', nodes: {} }) })
+    }))
+    await replayFromNode('my-flow', 'node id with spaces', {})
+    expect(capturedUrl).toContain('node%20id%20with%20spaces')
+  })
+
+  it('throws on non-ok response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 422, json: () => Promise.resolve({ error: 'node not found', execution_id: '', nodes: {} }) }))
+    await expect(replayFromNode('my-flow', 'node_1', {})).rejects.toThrow('Replay from node failed (422)')
   })
 })

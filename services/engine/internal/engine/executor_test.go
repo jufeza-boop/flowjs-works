@@ -526,3 +526,139 @@ func TestTransition_NoConditionFallback(t *testing.T) {
 	s2, _ := ctx.GetValue("$.nodes.on_false.status")
 	assert.Equal(t, "success", s2)
 }
+
+// TestExecuteFromNode_SkipsStartNodeAndRunsDownstream verifies that ExecuteFromNode
+// injects nodeInput for the start node (marking it "replayed") and runs downstream nodes.
+func TestExecuteFromNode_SkipsStartNodeAndRunsDownstream(t *testing.T) {
+	exec := newTestExecutor(t)
+	process := models.Process{
+		Definition: models.Definition{ID: "replay-p1", Version: "1.0.0", Name: "replay-p1"},
+		Trigger:    models.Trigger{ID: "trg", Type: "manual"},
+		Nodes: []models.Node{
+			{ID: "start_node", Type: "logger", Config: map[string]interface{}{"level": "info"}},
+			{ID: "next_node", Type: "logger", Config: map[string]interface{}{"level": "info"}},
+		},
+		Transitions: []models.Transition{
+			{From: "start_node", To: "next_node", Type: "success"},
+		},
+	}
+	injected := map[string]interface{}{"key": "injected_value"}
+	ctx, err := exec.ExecuteFromNode(&process, "start_node", injected, "")
+	require.NoError(t, err)
+	require.NotNil(t, ctx)
+
+	// Start node must be marked "replayed", not executed.
+	startStatus, _ := ctx.GetValue("$.nodes.start_node.status")
+	assert.Equal(t, "replayed", startStatus)
+
+	// Injected output must be present on the start node.
+	startOut, _ := ctx.GetValue("$.nodes.start_node.output")
+	outMap, ok := startOut.(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "injected_value", outMap["key"])
+
+	// Downstream node must have been executed.
+	nextStatus, _ := ctx.GetValue("$.nodes.next_node.status")
+	assert.Equal(t, "success", nextStatus)
+}
+
+// TestExecuteFromNode_WithExecutionIDHint verifies that the provided execution ID hint is used.
+func TestExecuteFromNode_WithExecutionIDHint(t *testing.T) {
+	exec := newTestExecutor(t)
+	process := models.Process{
+		Definition: models.Definition{ID: "replay-p2", Version: "1.0.0", Name: "replay-p2"},
+		Trigger:    models.Trigger{ID: "trg", Type: "manual"},
+		Nodes: []models.Node{
+			{ID: "only_node", Type: "logger", Config: map[string]interface{}{"level": "info"}},
+		},
+	}
+	hint := "fixed-execution-id-1234"
+	ctx, err := exec.ExecuteFromNode(&process, "only_node", map[string]interface{}{}, hint)
+	require.NoError(t, err)
+	require.NotNil(t, ctx)
+	assert.Equal(t, hint, ctx.ExecutionID)
+}
+
+// TestExecuteFromNode_ConditionRouting verifies that condition transitions from the
+// start node are evaluated against the injected nodeInput.
+func TestExecuteFromNode_ConditionRouting(t *testing.T) {
+	exec := newTestExecutor(t)
+	process := models.Process{
+		Definition: models.Definition{ID: "replay-p3", Version: "1.0.0", Name: "replay-p3"},
+		Trigger:    models.Trigger{ID: "trg", Type: "manual"},
+		Nodes: []models.Node{
+			{ID: "start_node", Type: "logger", Config: map[string]interface{}{"level": "info"}},
+			{ID: "on_true", Type: "logger", Config: map[string]interface{}{"level": "info"}},
+			{ID: "on_false", Type: "logger", Config: map[string]interface{}{"level": "info"}},
+		},
+		Transitions: []models.Transition{
+			{From: "start_node", To: "on_true", Type: "condition", Condition: "$.nodes.start_node.output.score > 50"},
+			{From: "start_node", To: "on_false", Type: "nocondition"},
+		},
+	}
+
+	// Inject a score > 50 — on_true branch should be taken.
+	ctx, err := exec.ExecuteFromNode(&process, "start_node", map[string]interface{}{"score": 75}, "")
+	require.NoError(t, err)
+
+	trueStatus, _ := ctx.GetValue("$.nodes.on_true.status")
+	assert.Equal(t, "success", trueStatus)
+	_, falseErr := ctx.GetValue("$.nodes.on_false.status")
+	assert.Error(t, falseErr, "on_false should not have run when condition is true")
+}
+
+// ---------------------------------------------------------------------------
+// Terminal-event / named-return tests
+// ---------------------------------------------------------------------------
+
+// TestExecute_SuccessReturnsNilError confirms that a successful execution
+// returns a nil error (which causes the deferred COMPLETED audit event to fire).
+func TestExecute_SuccessReturnsNilError(t *testing.T) {
+exec := newTestExecutor(t)
+process := models.Process{
+Definition: models.Definition{ID: "terminal-ok", Version: "1.0.0", Name: "terminal-ok"},
+Trigger:    models.Trigger{ID: "trg_01", Type: "manual"},
+Nodes: []models.Node{
+{ID: "log_1", Type: "logger", Config: map[string]interface{}{"level": "info"}},
+},
+}
+ctx, err := exec.Execute(&process, map[string]interface{}{})
+require.NoError(t, err, "a successful execution must return nil error (triggers COMPLETED event)")
+assert.NotNil(t, ctx)
+}
+
+// TestExecute_FailureReturnsError confirms that a failing execution returns a
+// non-nil error (which causes the deferred FAILED audit event to fire).
+func TestExecute_FailureReturnsError(t *testing.T) {
+exec := newTestExecutor(t)
+process := models.Process{
+Definition: models.Definition{ID: "terminal-fail", Version: "1.0.0", Name: "terminal-fail"},
+Trigger:    models.Trigger{ID: "trg_01", Type: "manual"},
+Nodes: []models.Node{
+{ID: "bad_node", Type: "nonexistent_activity_type"},
+},
+}
+ctx, err := exec.Execute(&process, map[string]interface{}{})
+assert.Error(t, err, "a failing execution must return non-nil error (triggers FAILED event)")
+assert.NotNil(t, ctx, "context should still be returned on failure")
+}
+
+// TestExecuteFromNode_SuccessReturnsNilError confirms that ExecuteFromNode
+// returns nil error on success (triggers REPLAYED terminal event).
+func TestExecuteFromNode_SuccessReturnsNilError(t *testing.T) {
+exec := newTestExecutor(t)
+process := models.Process{
+Definition: models.Definition{ID: "replay-terminal-ok", Version: "1.0.0", Name: "replay-terminal-ok"},
+Trigger:    models.Trigger{ID: "trg_01", Type: "manual"},
+Nodes: []models.Node{
+{ID: "injected", Type: "logger"},
+{ID: "next_log", Type: "logger", Config: map[string]interface{}{"level": "info"}},
+},
+Transitions: []models.Transition{
+{From: "injected", To: "next_log", Type: "success"},
+},
+}
+ctx, err := exec.ExecuteFromNode(&process, "injected", map[string]interface{}{"ok": true}, "")
+require.NoError(t, err, "successful ExecuteFromNode must return nil error (triggers REPLAYED event)")
+assert.NotNil(t, ctx)
+}
