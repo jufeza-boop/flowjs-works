@@ -5,6 +5,18 @@ import { fetchExecutions, fetchActivityLogs, fetchTriggerData, replayExecution, 
 const LIMIT = 20
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Converts an unknown value to Record<string, unknown>, returning {} for non-objects. */
+function toRecordObject(v: unknown): Record<string, unknown> {
+  if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+    return v as Record<string, unknown>
+  }
+  return {}
+}
+
+// ---------------------------------------------------------------------------
 // JSON Viewer — lightweight recursive renderer
 // ---------------------------------------------------------------------------
 
@@ -164,11 +176,7 @@ function LogDetailPanel({ executionId, flowId, onClose }: LogDetailPanelProps) {
                       <button
                         onClick={() => {
                           setResumeStatus(null)
-                          const inputObj =
-                            log.input_data !== null && typeof log.input_data === 'object' && !Array.isArray(log.input_data)
-                              ? (log.input_data as Record<string, unknown>)
-                              : {}
-                          replayFromNode(flowId, log.node_id, inputObj)
+                          replayFromNode(flowId, log.node_id, toRecordObject(log.input_data))
                             .then(() => setResumeStatus({ nodeId: log.node_id, success: true }))
                             .catch(() => setResumeStatus({ nodeId: log.node_id, success: false }))
                         }}
@@ -288,12 +296,18 @@ export function ExecutionHistory() {
   async function handleReplay(e: React.MouseEvent, exec: Execution) {
     e.stopPropagation()
     setReplayMessage(null)
+    let triggerData: Record<string, unknown>
     try {
-      const triggerData = await fetchTriggerData(exec.execution_id)
+      triggerData = await fetchTriggerData(exec.execution_id)
+    } catch (err) {
+      setReplayMessage({ type: 'error', text: `Failed to fetch trigger data: ${err instanceof Error ? err.message : String(err)}` })
+      return
+    }
+    try {
       await replayExecution(exec.flow_id, triggerData)
       setReplayMessage({ type: 'success', text: `Replay started for ${exec.execution_id}` })
     } catch (err) {
-      setReplayMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) })
+      setReplayMessage({ type: 'error', text: `Replay execution failed: ${err instanceof Error ? err.message : String(err)}` })
     }
   }
 

@@ -189,31 +189,36 @@ func (e *ProcessExecutor) ExecuteFromNode(
 		}
 	}
 
+	var runErr error
 	if len(condTrans) > 0 || len(noCondTrans) > 0 {
+		dispatched := false
 		for _, t := range condTrans {
 			if evaluateCondition(t.Condition, ctx) {
+				runErr = e.executeChain(t.To, nodeMap, transMap, ctx, visited)
+				dispatched = true
+				break
+			}
+		}
+		if !dispatched {
+			for _, t := range noCondTrans {
 				if err := e.executeChain(t.To, nodeMap, transMap, ctx, visited); err != nil {
-					return ctx, err
+					runErr = err
+					break
 				}
-				log.Printf("Replay execution %s completed successfully", executionID)
-				return ctx, nil
 			}
 		}
-		for _, t := range noCondTrans {
+	} else {
+		for _, t := range successTrans {
 			if err := e.executeChain(t.To, nodeMap, transMap, ctx, visited); err != nil {
-				return ctx, err
+				runErr = err
+				break
 			}
 		}
-		log.Printf("Replay execution %s completed successfully", executionID)
-		return ctx, nil
 	}
 
-	for _, t := range successTrans {
-		if err := e.executeChain(t.To, nodeMap, transMap, ctx, visited); err != nil {
-			return ctx, err
-		}
+	if runErr != nil {
+		return ctx, runErr
 	}
-
 	log.Printf("Replay execution %s completed successfully", executionID)
 	return ctx, nil
 }

@@ -29,6 +29,31 @@ import (
 // characters, hyphens, and underscores, to prevent path traversal or injection.
 var validProcessIDRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,255}$`)
 
+// flowResponse is the shared response shape returned by /v1/flow, /replay, and /replay-from.
+type flowResponse struct {
+	ExecutionID string                            `json:"execution_id"`
+	Nodes       map[string]map[string]interface{} `json:"nodes"`
+	Error       string                            `json:"error,omitempty"`
+}
+
+// writeFlowResponse writes an execution result to w using the shared flowResponse shape.
+// On execution error it sets HTTP 422 Unprocessable Entity.
+func writeFlowResponse(w http.ResponseWriter, ctx *models.ExecutionContext, execErr error) {
+	resp := flowResponse{Nodes: map[string]map[string]interface{}{}}
+	if ctx != nil {
+		resp.ExecutionID = ctx.ExecutionID
+		resp.Nodes = ctx.Nodes
+	}
+	if execErr != nil {
+		resp.Error = execErr.Error()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_ = json.NewEncoder(w).Encode(resp)
+		return
+	}
+	jsonOK(w, resp)
+}
+
 func main() {
 	natsURL := envOrDefault("NATS_URL", "nats://localhost:4222")
 	httpAddr := envOrDefault("HTTP_ADDR", ":9090")
@@ -118,27 +143,7 @@ func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor, store 
 		}
 
 		ctx, execErr := executor.Execute(&req.DSL, req.TriggerData)
-
-		type response struct {
-			ExecutionID string                 `json:"execution_id"`
-			Nodes       map[string]map[string]interface{} `json:"nodes"`
-			Error       string                 `json:"error,omitempty"`
-		}
-
-		resp := response{Nodes: map[string]map[string]interface{}{}}
-		if ctx != nil {
-			resp.ExecutionID = ctx.ExecutionID
-			resp.Nodes = ctx.Nodes
-		}
-		if execErr != nil {
-			resp.Error = execErr.Error()
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnprocessableEntity)
-			_ = json.NewEncoder(w).Encode(resp)
-			return
-		}
-
-		jsonOK(w, resp)
+		writeFlowResponse(w, ctx, execErr)
 	})
 
 	// POST /v1/test — live test a single script/mapping node
@@ -492,25 +497,7 @@ func handleReplay(w http.ResponseWriter, r *http.Request, processID string, proc
 	}
 
 	ctx, execErr := executor.Execute(proc, req.TriggerData)
-
-	type response struct {
-		ExecutionID string                            `json:"execution_id"`
-		Nodes       map[string]map[string]interface{} `json:"nodes"`
-		Error       string                            `json:"error,omitempty"`
-	}
-	resp := response{Nodes: map[string]map[string]interface{}{}}
-	if ctx != nil {
-		resp.ExecutionID = ctx.ExecutionID
-		resp.Nodes = ctx.Nodes
-	}
-	if execErr != nil {
-		resp.Error = execErr.Error()
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		_ = json.NewEncoder(w).Encode(resp)
-		return
-	}
-	jsonOK(w, resp)
+	writeFlowResponse(w, ctx, execErr)
 }
 
 // handleReplayFrom re-executes a stored process starting from a specific node,
@@ -547,25 +534,7 @@ func handleReplayFrom(w http.ResponseWriter, r *http.Request, processID, nodeID 
 	}
 
 	ctx, execErr := executor.ExecuteFromNode(proc, nodeID, req.NodeInput, "")
-
-	type response struct {
-		ExecutionID string                            `json:"execution_id"`
-		Nodes       map[string]map[string]interface{} `json:"nodes"`
-		Error       string                            `json:"error,omitempty"`
-	}
-	resp := response{Nodes: map[string]map[string]interface{}{}}
-	if ctx != nil {
-		resp.ExecutionID = ctx.ExecutionID
-		resp.Nodes = ctx.Nodes
-	}
-	if execErr != nil {
-		resp.Error = execErr.Error()
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		_ = json.NewEncoder(w).Encode(resp)
-		return
-	}
-	jsonOK(w, resp)
+	writeFlowResponse(w, ctx, execErr)
 }
 
 
