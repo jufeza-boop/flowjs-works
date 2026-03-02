@@ -102,14 +102,80 @@ export async function runFlow(payload: RunFlowRequest): Promise<RunFlowResponse>
   return data
 }
 
+/** Options for filtering/paginating executions */
+export interface FetchExecutionsOptions {
+  status?: string
+  search?: string
+  limit?: number
+  offset?: number
+}
+
 /** Fetch all executions ordered by start_time DESC */
-export async function fetchExecutions(): Promise<Execution[]> {
-  const res = await fetch(`${AUDIT_API_BASE}/executions`)
+export async function fetchExecutions(opts?: FetchExecutionsOptions): Promise<Execution[]> {
+  const params = new URLSearchParams()
+  if (opts?.status) params.append('status', opts.status)
+  if (opts?.search) params.append('search', opts.search)
+  if (opts?.limit !== undefined) params.append('limit', String(opts.limit))
+  if (opts?.offset !== undefined) params.append('offset', String(opts.offset))
+  const qs = params.toString()
+  const url = qs ? `${AUDIT_API_BASE}/executions?${qs}` : `${AUDIT_API_BASE}/executions`
+  const res = await fetch(url)
   if (!res.ok) {
     const body = await res.text()
     throw new Error(`Failed to fetch executions (${res.status}): ${body}`)
   }
   return res.json() as Promise<Execution[]>
+}
+
+/** Fetch the original trigger data for a given execution_id */
+export async function fetchTriggerData(executionId: string): Promise<Record<string, unknown>> {
+  const res = await fetch(`${AUDIT_API_BASE}/executions/${encodeURIComponent(executionId)}/trigger-data`)
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`Failed to fetch trigger data (${res.status}): ${body}`)
+  }
+  return res.json() as Promise<Record<string, unknown>>
+}
+
+/** Full replay: re-execute a flow with the given trigger data */
+export async function replayExecution(
+  processId: string,
+  triggerData: Record<string, unknown>,
+): Promise<RunFlowResponse> {
+  const res = await fetch(
+    `${ENGINE_API_BASE}/api/v1/processes/${encodeURIComponent(processId)}/replay`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trigger_data: triggerData }),
+    },
+  )
+  const data = await res.json() as RunFlowResponse
+  if (!res.ok) {
+    throw new Error(`Replay failed (${res.status}): ${data.error ?? res.statusText}`)
+  }
+  return data
+}
+
+/** Partial replay: resume a flow from a specific node using its saved input */
+export async function replayFromNode(
+  processId: string,
+  nodeId: string,
+  nodeInput: Record<string, unknown>,
+): Promise<RunFlowResponse> {
+  const res = await fetch(
+    `${ENGINE_API_BASE}/api/v1/processes/${encodeURIComponent(processId)}/replay-from/${encodeURIComponent(nodeId)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_input: nodeInput }),
+    },
+  )
+  const data = await res.json() as RunFlowResponse
+  if (!res.ok) {
+    throw new Error(`Replay from node failed (${res.status}): ${data.error ?? res.statusText}`)
+  }
+  return data
 }
 
 /** Fetch activity logs for a given execution_id */

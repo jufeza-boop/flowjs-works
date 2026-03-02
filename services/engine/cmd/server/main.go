@@ -6,7 +6,9 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -26,6 +28,31 @@ import (
 // validProcessIDRe ensures process IDs only contain URL-safe alphanumeric
 // characters, hyphens, and underscores, to prevent path traversal or injection.
 var validProcessIDRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,255}$`)
+
+// flowResponse is the shared response shape returned by /v1/flow, /replay, and /replay-from.
+type flowResponse struct {
+	ExecutionID string                            `json:"execution_id"`
+	Nodes       map[string]map[string]interface{} `json:"nodes"`
+	Error       string                            `json:"error,omitempty"`
+}
+
+// writeFlowResponse writes an execution result to w using the shared flowResponse shape.
+// On execution error it sets HTTP 422 Unprocessable Entity.
+func writeFlowResponse(w http.ResponseWriter, ctx *models.ExecutionContext, execErr error) {
+	resp := flowResponse{Nodes: map[string]map[string]interface{}{}}
+	if ctx != nil {
+		resp.ExecutionID = ctx.ExecutionID
+		resp.Nodes = ctx.Nodes
+	}
+	if execErr != nil {
+		resp.Error = execErr.Error()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_ = json.NewEncoder(w).Encode(resp)
+		return
+	}
+	jsonOK(w, resp)
+}
 
 func main() {
 	natsURL := envOrDefault("NATS_URL", "nats://localhost:4222")
@@ -116,27 +143,7 @@ func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor, store 
 		}
 
 		ctx, execErr := executor.Execute(&req.DSL, req.TriggerData)
-
-		type response struct {
-			ExecutionID string                 `json:"execution_id"`
-			Nodes       map[string]map[string]interface{} `json:"nodes"`
-			Error       string                 `json:"error,omitempty"`
-		}
-
-		resp := response{Nodes: map[string]map[string]interface{}{}}
-		if ctx != nil {
-			resp.ExecutionID = ctx.ExecutionID
-			resp.Nodes = ctx.Nodes
-		}
-		if execErr != nil {
-			resp.Error = execErr.Error()
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnprocessableEntity)
-			_ = json.NewEncoder(w).Encode(resp)
-			return
-		}
-
-		jsonOK(w, resp)
+		writeFlowResponse(w, ctx, execErr)
 	})
 
 	// POST /v1/test — live test a single script/mapping node
@@ -332,9 +339,9 @@ func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor, store 
 			jsonError(w, "process store not configured (DATABASE_URL missing)", http.StatusServiceUnavailable)
 			return
 		}
-		// Strip prefix and split off optional sub-resource (deploy / stop)
+		// Strip prefix and split off optional sub-resource (deploy / stop / replay / replay-from)
 		rest := strings.TrimPrefix(r.URL.Path, "/api/v1/processes/")
-		parts := strings.SplitN(rest, "/", 2)
+		parts := strings.SplitN(rest, "/", 3)
 		processID := parts[0]
 		if processID == "" {
 			jsonError(w, "process id is required", http.StatusBadRequest)
@@ -346,12 +353,20 @@ func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor, store 
 		}
 
 		// ── sub-resource routing ─────────────────────────────────────────
-		if len(parts) == 2 {
+		if len(parts) >= 2 && parts[1] != "" {
 			switch parts[1] {
 			case "deploy":
 				handleDeploy(w, r, processID, procStore, triggerMgr, executor)
 			case "stop":
 				handleStop(w, r, processID, procStore, triggerMgr, executor)
+			case "replay":
+				handleReplay(w, r, processID, procStore, executor)
+			case "replay-from":
+				if len(parts) < 3 || parts[2] == "" {
+					jsonError(w, "node id is required for replay-from", http.StatusBadRequest)
+					return
+				}
+				handleReplayFrom(w, r, processID, parts[2], procStore, executor)
 			default:
 				jsonError(w, fmt.Sprintf("unknown sub-resource: %q", parts[1]), http.StatusNotFound)
 			}
@@ -449,11 +464,89 @@ func handleStop(w http.ResponseWriter, r *http.Request, processID string, procSt
 	})
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+// handleReplay executes a stored process using new trigger data (full re-run).
+func handleReplay(w http.ResponseWriter, r *http.Request, processID string, procStore *procstore.ProcessStore, executor *engine.ProcessExecutor) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if procStore == nil {
+		jsonError(w, "process store not configured (DATABASE_URL missing)", http.StatusServiceUnavailable)
+		return
+	}
+	rec, err := procStore.Get(r.Context(), processID)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	proc, err := rec.ParseDSL()
+	if err != nil {
+		jsonError(w, fmt.Sprintf("parse DSL: %v", err), http.StatusInternalServerError)
+		return
+	}
 
-// corsMiddleware adds CORS headers so the Designer frontend can call this API.
+	var reqRaw struct {
+		TriggerData json.RawMessage `json:"trigger_data"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&reqRaw); err != nil && !errors.Is(err, io.EOF) {
+		jsonError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+	// Accept any JSON value for trigger_data; default to {} if absent or null.
+	// Return 400 if trigger_data is present but not a JSON object.
+	var triggerData map[string]interface{}
+	if len(reqRaw.TriggerData) > 0 {
+		if err := json.Unmarshal(reqRaw.TriggerData, &triggerData); err != nil || triggerData == nil {
+			jsonError(w, "trigger_data must be a JSON object (got non-object value)", http.StatusBadRequest)
+			return
+		}
+	}
+	if triggerData == nil {
+		triggerData = map[string]interface{}{}
+	}
+
+	ctx, execErr := executor.Execute(proc, triggerData)
+	writeFlowResponse(w, ctx, execErr)
+}
+
+// handleReplayFrom re-executes a stored process starting from a specific node,
+// injecting nodeInput as the pre-resolved output of that node.
+func handleReplayFrom(w http.ResponseWriter, r *http.Request, processID, nodeID string, procStore *procstore.ProcessStore, executor *engine.ProcessExecutor) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if procStore == nil {
+		jsonError(w, "process store not configured (DATABASE_URL missing)", http.StatusServiceUnavailable)
+		return
+	}
+	rec, err := procStore.Get(r.Context(), processID)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	proc, err := rec.ParseDSL()
+	if err != nil {
+		jsonError(w, fmt.Sprintf("parse DSL: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	var req struct {
+		NodeInput map[string]interface{} `json:"node_input"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		jsonError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+	if req.NodeInput == nil {
+		req.NodeInput = map[string]interface{}{}
+	}
+
+	ctx, execErr := executor.ExecuteFromNode(proc, nodeID, req.NodeInput, "")
+	writeFlowResponse(w, ctx, execErr)
+}
+
+
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")

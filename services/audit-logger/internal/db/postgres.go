@@ -87,36 +87,70 @@ func (c *Client) BatchInsertLogs(events []batcher.AuditEvent) error {
 }
 
 // upsertExecutions ensures that every execution_id referenced by the batch
-// has a corresponding row in the executions table.
+// has a corresponding row in the executions table, and updates the status
+// to COMPLETED, FAILED, or REPLAYED when a terminal process event is present.
 func upsertExecutions(tx *sql.Tx, events []batcher.AuditEvent) error {
-	// Deduplicate execution IDs within this batch and record their flow_id.
-	// The first event seen for each execution_id wins.
-	seen := make(map[string]string) // executionID → flowID
+	// Track per-execution: flow_id (first seen) and the terminal status/error (last terminal).
+	type execInfo struct {
+		flowID         string
+		terminalStatus string // COMPLETED | FAILED | REPLAYED, or ""
+		errorMsg       string
+	}
+
+	infos := make(map[string]*execInfo)
 	for _, e := range events {
 		if e.ExecutionID == "" {
 			continue
 		}
-		if _, exists := seen[e.ExecutionID]; !exists {
+		info, exists := infos[e.ExecutionID]
+		if !exists {
 			flowID := e.FlowID
 			if flowID == "" {
 				flowID = "unknown"
 			}
-			seen[e.ExecutionID] = flowID
+			info = &execInfo{flowID: flowID}
+			infos[e.ExecutionID] = info
+		} else if info.flowID == "unknown" && e.FlowID != "" {
+			info.flowID = e.FlowID
+		}
+		// A process-type event with a terminal status finalises the execution.
+		if e.NodeType == "process" {
+			status := strings.ToUpper(e.Status)
+			if status == "COMPLETED" || status == "FAILED" || status == "REPLAYED" {
+				info.terminalStatus = status
+				info.errorMsg = e.ErrorMsg
+			}
 		}
 	}
 
-	stmt, err := tx.Prepare(`
+	// Insert new execution rows (idempotent).
+	insertStmt, err := tx.Prepare(`
 		INSERT INTO executions (execution_id, flow_id, status, start_time)
-		VALUES ($1, $2, $3, NOW())
+		VALUES ($1, $2, 'STARTED', NOW())
 		ON CONFLICT (execution_id) DO NOTHING`)
 	if err != nil {
-		return fmt.Errorf("prepare upsert executions: %w", err)
+		return fmt.Errorf("prepare insert executions: %w", err)
 	}
-	defer stmt.Close()
+	defer insertStmt.Close()
 
-	for id, flowID := range seen {
-		if _, err := stmt.Exec(id, flowID, "STARTED"); err != nil {
-			return fmt.Errorf("upsert execution %s: %w", id, err)
+	// Update terminal status for finished executions.
+	updateStmt, err := tx.Prepare(`
+		UPDATE executions
+		SET status = $1, end_time = NOW(), main_error_message = NULLIF($2, '')
+		WHERE execution_id = $3`)
+	if err != nil {
+		return fmt.Errorf("prepare update executions: %w", err)
+	}
+	defer updateStmt.Close()
+
+	for id, info := range infos {
+		if _, err := insertStmt.Exec(id, info.flowID); err != nil {
+			return fmt.Errorf("insert execution %s: %w", id, err)
+		}
+		if info.terminalStatus != "" {
+			if _, err := updateStmt.Exec(info.terminalStatus, info.errorMsg, id); err != nil {
+				return fmt.Errorf("update execution %s status: %w", id, err)
+			}
 		}
 	}
 	return nil

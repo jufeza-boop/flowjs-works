@@ -71,12 +71,12 @@ func (e *ProcessExecutor) ExecuteFromJSON(jsonData []byte, triggerData map[strin
 }
 
 // Execute executes a process with the given trigger data
-func (e *ProcessExecutor) Execute(process *models.Process, triggerData map[string]interface{}) (*models.ExecutionContext, error) {
+func (e *ProcessExecutor) Execute(process *models.Process, triggerData map[string]interface{}) (ctx *models.ExecutionContext, err error) {
 	executionID := uuid.New().String()
 	processID := process.Definition.ID
 	log.Printf("Starting execution %s for process %s (v%s)", executionID, processID, process.Definition.Version)
 
-	ctx := models.NewExecutionContext(executionID)
+	ctx = models.NewExecutionContext(executionID)
 	ctx.ProcessID = processID
 	ctx.SetTriggerData(triggerData)
 
@@ -85,11 +85,23 @@ func (e *ProcessExecutor) Execute(process *models.Process, triggerData map[strin
 	e.sendAuditLog(executionID, processID, processID, "process", "started",
 		map[string]interface{}{"trigger": triggerData}, nil, "")
 
+	// Emit terminal audit event (COMPLETED or FAILED) when the function returns.
+	defer func() {
+		status := "completed"
+		errMsg := ""
+		if err != nil {
+			status = "failed"
+			errMsg = err.Error()
+		}
+		e.sendAuditLog(executionID, processID, processID, "process", status,
+			map[string]interface{}{"trigger": triggerData}, nil, errMsg)
+	}()
+
 	// Sequential mode: backward-compatible when no transitions and no Next fields
 	if isSequentialMode(process) {
 		for _, node := range process.Nodes {
 			nodeCopy := node
-			if err := e.executeNode(&nodeCopy, ctx); err != nil {
+			if err = e.executeNode(&nodeCopy, ctx); err != nil {
 				return ctx, fmt.Errorf("node %s failed: %w", node.ID, err)
 			}
 		}
@@ -125,7 +137,7 @@ func (e *ProcessExecutor) Execute(process *models.Process, triggerData map[strin
 
 	visited := make(map[string]bool)
 	for _, startID := range startNodes {
-		if err := e.executeChain(startID, nodeMap, transMap, ctx, visited); err != nil {
+		if err = e.executeChain(startID, nodeMap, transMap, ctx, visited); err != nil {
 			return ctx, err
 		}
 	}
@@ -134,7 +146,107 @@ func (e *ProcessExecutor) Execute(process *models.Process, triggerData map[strin
 	return ctx, nil
 }
 
-// isSequentialMode returns true when no transitions and no Next fields are defined.
+// ExecuteFromNode re-executes the process starting from startNodeID,
+// injecting nodeInput as the pre-resolved input for that node.
+// A new execution_id is generated unless executionIDHint is non-empty.
+func (e *ProcessExecutor) ExecuteFromNode(
+	process *models.Process,
+	startNodeID string,
+	nodeInput map[string]interface{},
+	executionIDHint string,
+) (ctx *models.ExecutionContext, err error) {
+	executionID := executionIDHint
+	if executionID == "" {
+		executionID = uuid.New().String()
+	}
+	processID := process.Definition.ID
+	log.Printf("Starting replay execution %s for process %s from node %s", executionID, processID, startNodeID)
+
+	ctx = models.NewExecutionContext(executionID)
+	ctx.ProcessID = processID
+	ctx.SetTriggerData(map[string]interface{}{})
+
+	// Emit execution-start audit event.
+	e.sendAuditLog(executionID, processID, processID, "process", "started",
+		map[string]interface{}{"replay_from": startNodeID}, nil, "")
+
+	// Emit terminal audit event (REPLAYED or FAILED) when the function returns.
+	defer func() {
+		status := "replayed"
+		errMsg := ""
+		if err != nil {
+			status = "failed"
+			errMsg = err.Error()
+		}
+		e.sendAuditLog(executionID, processID, processID, "process", status,
+			map[string]interface{}{"replay_from": startNodeID}, nil, errMsg)
+	}()
+
+	// Build nodeMap and transMap.
+	nodeMap := make(map[string]*models.Node, len(process.Nodes))
+	for i := range process.Nodes {
+		nodeMap[process.Nodes[i].ID] = &process.Nodes[i]
+	}
+	transMap := make(map[string][]models.Transition)
+	for _, t := range process.Transitions {
+		transMap[t.From] = append(transMap[t.From], t)
+	}
+
+	// Inject the start node's output and mark it as replayed so it is skipped.
+	ctx.SetNodeOutput(startNodeID, nodeInput)
+	ctx.SetNodeStatus(startNodeID, "replayed")
+
+	// Follow transitions from the start node (mirroring executeChain routing,
+	// but without re-executing the start node itself).
+	visited := make(map[string]bool)
+	visited[startNodeID] = true
+
+	var condTrans, noCondTrans, successTrans []models.Transition
+	for _, t := range transMap[startNodeID] {
+		switch t.Type {
+		case "condition":
+			condTrans = append(condTrans, t)
+		case "nocondition":
+			noCondTrans = append(noCondTrans, t)
+		case "success":
+			successTrans = append(successTrans, t)
+		}
+	}
+
+	if len(condTrans) > 0 || len(noCondTrans) > 0 {
+		dispatched := false
+		for _, t := range condTrans {
+			if evaluateCondition(t.Condition, ctx) {
+				err = e.executeChain(t.To, nodeMap, transMap, ctx, visited)
+				dispatched = true
+				break
+			}
+		}
+		if !dispatched {
+			for _, t := range noCondTrans {
+				if chainErr := e.executeChain(t.To, nodeMap, transMap, ctx, visited); chainErr != nil {
+					err = chainErr
+					break
+				}
+			}
+		}
+	} else {
+		for _, t := range successTrans {
+			if chainErr := e.executeChain(t.To, nodeMap, transMap, ctx, visited); chainErr != nil {
+				err = chainErr
+				break
+			}
+		}
+	}
+
+	if err != nil {
+		return ctx, err
+	}
+	log.Printf("Replay execution %s completed successfully", executionID)
+	return ctx, nil
+}
+
+
 func isSequentialMode(process *models.Process) bool {
 	if len(process.Transitions) > 0 {
 		return false
