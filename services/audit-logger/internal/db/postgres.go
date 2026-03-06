@@ -111,8 +111,8 @@ func upsertExecutions(tx *sql.Tx, events []batcher.AuditEvent) error {
 
 	// Insert new execution rows (idempotent).
 	insertStmt, err := tx.Prepare(`
-		INSERT INTO executions (execution_id, flow_id, status, start_time)
-		VALUES ($1, $2, 'STARTED', NOW())
+		INSERT INTO executions (execution_id, flow_id, status, start_time, trigger_type)
+		VALUES ($1, $2, 'STARTED', NOW(), NULLIF($3, ''))
 		ON CONFLICT (execution_id) DO NOTHING`)
 	if err != nil {
 		return fmt.Errorf("prepare insert executions: %w", err)
@@ -130,7 +130,7 @@ func upsertExecutions(tx *sql.Tx, events []batcher.AuditEvent) error {
 	defer updateStmt.Close()
 
 	for id, info := range infos {
-		if _, err := insertStmt.Exec(id, info.flowID); err != nil {
+		if _, err := insertStmt.Exec(id, info.flowID, info.triggerType); err != nil {
 			return fmt.Errorf("insert execution %s: %w", id, err)
 		}
 		if info.terminalStatus != "" {
@@ -147,6 +147,7 @@ type execInfo struct {
 	flowID         string
 	terminalStatus string // COMPLETED | FAILED | REPLAYED, or ""
 	errorMsg       string
+	triggerType    string // "lifecycle" for deploy/stop events, empty otherwise
 }
 
 // classifyExecutions scans a batch of events and returns per-execution metadata:
@@ -176,6 +177,11 @@ func classifyExecutions(events []batcher.AuditEvent) map[string]*execInfo {
 				info.terminalStatus = status
 				info.errorMsg = e.ErrorMsg
 			}
+		}
+		// Mark executions that originate from lifecycle (deploy/stop) events so
+		// they can be excluded from the user-facing execution history.
+		if e.NodeType == "lifecycle" && info.triggerType == "" {
+			info.triggerType = "lifecycle"
 		}
 	}
 	return infos
