@@ -59,7 +59,7 @@ jobs:
       # golangci-lint covers: unconvert, gocyclo ≤10, errcheck, dupl, staticcheck…
       # Config lives at repo root: .golangci.yml
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
           version: v2.11.2
           working-directory: ${{ matrix.service }}
