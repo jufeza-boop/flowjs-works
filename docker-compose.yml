@@ -32,9 +32,11 @@ services:
     container_name: flowjs-audit-logger
     restart: always
     environment:
+      - APP_ENV=development
       - NATS_URL=nats://nats:4222
       - POSTGRES_DSN=host=postgres port=5432 user=admin password=flowjs_pass dbname=flowjs_audit sslmode=disable
       - HTTP_ADDR=:8080
+      - ALLOWED_ORIGINS=http://localhost:5173
     ports:
       - "8080:8080"
     depends_on:
@@ -49,10 +51,12 @@ services:
     container_name: flowjs-engine
     restart: always
     environment:
+      - APP_ENV=development
       - NATS_URL=nats://nats:4222
       - DATABASE_URL=postgres://admin:flowjs_pass@postgres:5432/flowjs_config?sslmode=disable
       - HTTP_ADDR=:9090
       - SECRETS_AES_KEY=18fc8cf22b9befe4abedbdef9275ed950eac44a12ae971936ee56f3e587e11d5
+      - ALLOWED_ORIGINS=http://localhost:5173
     ports:
       - "9090:9090"
     depends_on:
