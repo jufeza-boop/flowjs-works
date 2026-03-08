@@ -1,11 +1,10 @@
 # golangci-lint configuration for flowjs-works
 # ADR 0001: CI lint gate — prevents accumulation of code smells.
 # https://golangci-lint.run/usage/configuration/
-
-version: "2"
+# Compatible with golangci-lint v1.x
 
 linters:
-  default: none
+  disable-all: true
   enable:
     # Format
     - gofmt          # Enforces canonical Go formatting (ADR #2 / standard #8)
