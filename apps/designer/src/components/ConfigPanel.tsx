@@ -20,14 +20,13 @@ interface ConfigPanelProps {
 const NODES_WITH_SECRET = ['sftp', 's3', 'smb', 'mail', 'rabbitmq', 'sql', 'http']
 
 /**
- * Resolves the script string from a node's data regardless of whether it is stored
- * in `data.script` (legacy `script_ts` nodes) or `data.config.script` (`code` nodes).
+ * Resolves the script string from a `code` node's config.
+ * Script is stored in `data.config.script`.
  */
 function resolveScript(data: DesignerNode['data']): string {
   if (data.nodeKind !== 'process') return ''
-  if ((data.type as string) === 'script_ts') return (data.script as string) ?? ''
   if ((data.type as string) === 'code') {
-    return ((data.config as Record<string, unknown>)?.script as string) ?? ''
+    return ((data.config as unknown as Record<string, unknown>)?.script as string) ?? ''
   }
   return ''
 }
@@ -122,13 +121,9 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
   }
 
   const handleScriptChange = (value: string) => {
-    if (data.nodeKind === 'process' && ((data.type as string) === 'script_ts' || data.type === 'code')) {
-      if (data.type === 'code') {
-        const currentConfig = (data.config as unknown as Record<string, unknown>) || {}
-        updateNodeConfigCentralized({ ...currentConfig, script: value })
-      } else {
-        updateNodeDataCentralized({ script: value })
-      }
+    if (data.nodeKind === 'process' && data.type === 'code') {
+      const currentConfig = (data.config as unknown as Record<string, unknown>) || {}
+      updateNodeConfigCentralized({ ...currentConfig, script: value })
     }
   }
 
@@ -611,8 +606,8 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
             </div>
           )}
 
-          {/* Code / script_ts node config */}
-          {data.nodeKind === 'process' && ((data.type as string) === 'code' || (data.type as string) === 'script_ts') && (
+          {/* Code node config */}
+          {data.nodeKind === 'process' && (data.type as string) === 'code' && (
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className={labelClass}>Script</label>
@@ -683,7 +678,7 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
         </div>
       )}
 
-      {showMonaco && data.nodeKind === 'process' && ((data.type as string) === 'script_ts' || data.type === 'code') && (
+      {showMonaco && data.nodeKind === 'process' && data.type === 'code' && (
         <MonacoModal value={currentScript} onSave={handleMonacoSave} onClose={() => setShowMonaco(false)} />
       )}
     </>

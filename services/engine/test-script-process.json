@@ -3,7 +3,7 @@
     "id": "script-test-process",
     "version": "1.0.0",
     "name": "Script Test Process",
-    "description": "Test the script_ts node with Goja integration",
+    "description": "Test the code node with Goja integration",
     "settings": {
       "persistence": "full",
       "timeout": 30000,
@@ -32,7 +32,7 @@
     },
     {
       "id": "transform_data",
-      "type": "script_ts",
+      "type": "code",
       "description": "Transform data using JavaScript",
       "input_mapping": {
         "name": "$.trigger.body.name",

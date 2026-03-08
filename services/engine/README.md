@@ -36,7 +36,7 @@ services/engine/
 ### Built-in Activities
 - **Logger**: Logs messages to console with configurable levels
 - **HTTP**: Makes HTTP requests with retry support
-- **Script (script_ts)**: Executes JavaScript code for data transformations
+- **Script (code)**: Executes JavaScript code for data transformations
 
 ### Error Handling
 - Robust error handling at every level
@@ -179,8 +179,10 @@ Makes HTTP requests.
 }
 ```
 
-#### Script (script_ts)
+#### Code
 Executes JavaScript code for data transformations using the Goja JavaScript engine.
+
+> **Note:** The legacy `script_ts` type is deprecated. Use `code` instead (ADR 0001).
 
 **Features:**
 - Access input data via the `input` object
@@ -192,7 +194,7 @@ Executes JavaScript code for data transformations using the Goja JavaScript engi
 ```json
 {
   "id": "transform_data",
-  "type": "script_ts",
+  "type": "code",
   "description": "Transform user data",
   "input_mapping": {
     "name": "$.trigger.body.name",
@@ -206,7 +208,7 @@ Executes JavaScript code for data transformations using the Goja JavaScript engi
 ```json
 {
   "id": "filter_users",
-  "type": "script_ts",
+  "type": "code",
   "description": "Filter adult users",
   "input_mapping": {
     "users": "$.trigger.body.users",
@@ -238,7 +240,7 @@ The repository includes several example processes:
 
 1. **Embedded Example** (`cmd/runner/main.go`): Simple hello world process
 2. **test-process.json**: Tests context and JSONPath functionality
-3. **test-script-process.json**: Demonstrates JavaScript transformation with script_ts
+3. **test-script-process.json**: Demonstrates JavaScript transformation with `code` node
 4. **error-test.json**: Tests error handling and retry logic
 5. **test-catfact-process.json**: External GET integration flow against catfact.ninja
 

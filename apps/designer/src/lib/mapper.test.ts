@@ -64,7 +64,7 @@ describe('buildSourceFields', () => {
     id,
     type: 'scriptNode',
     position: { x: 0, y: 0 },
-    data: { nodeKind: 'process', id, type: 'script_ts' } as unknown as NodeData,
+    data: { nodeKind: 'process', id, type: 'code' } as unknown as NodeData,
   })
 
   it('always includes trigger fields', () => {
@@ -168,7 +168,7 @@ describe('round-trip: buildSourceFields -> buildInputMapping', () => {
         id: 'map_01',
         type: 'scriptNode',
         position: { x: 0, y: 0 },
-        data: { nodeKind: 'process', id: 'map_01', type: 'script_ts' } as unknown as NodeData,
+        data: { nodeKind: 'process', id: 'map_01', type: 'code' } as unknown as NodeData,
       },
     ]
     const sourceFields = buildSourceFields(nodes, 'current_node')

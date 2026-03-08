@@ -5,19 +5,12 @@ import (
 	"time"
 
 	"flowjs-works/engine/internal/models"
+
 	"github.com/dop251/goja"
 )
 
-// ScriptActivity executes JavaScript/TypeScript code using Goja (registered as "script_ts")
-type ScriptActivity struct{}
-
-func (a *ScriptActivity) Name() string { return "script_ts" }
-
-func (a *ScriptActivity) Execute(input map[string]interface{}, config map[string]interface{}, ctx *models.ExecutionContext) (map[string]interface{}, error) {
-	return executeScript(input, config, ctx)
-}
-
-// CodeActivity is an alias for ScriptActivity registered as "code"
+// CodeActivity executes JavaScript/TypeScript code using Goja (registered as "code").
+// The legacy "script_ts" type has been deprecated in favour of "code" (ADR 0001).
 type CodeActivity struct{}
 
 func (a *CodeActivity) Name() string { return "code" }

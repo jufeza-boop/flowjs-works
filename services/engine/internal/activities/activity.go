@@ -6,7 +6,7 @@ import "flowjs-works/engine/internal/models"
 type Activity interface {
 	// Execute runs the activity with the given input and context
 	Execute(input map[string]interface{}, config map[string]interface{}, ctx *models.ExecutionContext) (map[string]interface{}, error)
-	
+
 	// Name returns the name/type of the activity
 	Name() string
 }
@@ -21,11 +21,10 @@ func NewActivityRegistry() *ActivityRegistry {
 	registry := &ActivityRegistry{
 		activities: make(map[string]Activity),
 	}
-	
+
 	// Register built-in activities
 	registry.Register(&LoggerActivity{})
 	registry.Register(NewHTTPActivity())
-	registry.Register(&ScriptActivity{})
 	registry.Register(&LogActivity{})
 	registry.Register(&CodeActivity{})
 	registry.Register(&FileActivity{})

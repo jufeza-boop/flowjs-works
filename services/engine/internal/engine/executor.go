@@ -242,7 +242,6 @@ func (e *ProcessExecutor) ExecuteFromNode(
 	return ctx, nil
 }
 
-
 func isSequentialMode(process *models.Process) bool {
 	if len(process.Transitions) > 0 {
 		return false
@@ -389,8 +388,9 @@ func (e *ProcessExecutor) executeNode(node *models.Node, ctx *models.ExecutionCo
 		config[k] = v
 	}
 
-	// For script nodes, add the script field to config
-	if (node.Type == "script_ts" || node.Type == "code") && node.Script != "" {
+	// For code nodes, promote the top-level script field into config so the
+	// activity receives it via the standard config map.
+	if node.Type == "code" && node.Script != "" {
 		config["script"] = node.Script
 	}
 

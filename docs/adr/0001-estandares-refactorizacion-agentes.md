@@ -174,7 +174,7 @@ Sustituir todos los literales correspondientes por las constantes nombradas. Eli
 - **`FlowContext` (React Context)** para eliminar Props Drilling y el Data Clump `{nodes, edges, definition}`.
 - **`NodeExecution` como tipo canónico** en `ExecutionContext.Nodes` para eliminar el Primitive Obsession con `map[string]interface{}`.
 - **Abstraer el patrón put/get** en una interface `RemoteFS` (SFTP, SMB, S3).
-- **Deprecar `script_ts`** como tipo de nodo y migrar DSLs existentes a `code` para eliminar las ramas condicionales residuales.
+- ~~**Deprecar `script_ts`**~~: ✅ `script_ts` eliminado. `ScriptActivity` removida del registro; `CodeActivity` es el único tipo canónico. DSLs de prueba, tests de Go, tests de frontend y `ConfigPanel.tsx` migrados a `code` (ADR 0001, 2026-03-08).
 - ~~**CI lint gate**~~: ✅ Implementado en `.github/workflows/lint.yml` + `.golangci.yml`. El workflow ejecuta `gofmt -l`, `golangci-lint` (unconvert, gocyclo ≤10, errcheck, dupl, staticcheck) y `eslint --max-warnings 0` en cada push/PR a `main`.
 
 ---

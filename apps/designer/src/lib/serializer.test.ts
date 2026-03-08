@@ -33,7 +33,7 @@ describe('serializeGraph', () => {
         data: {
           nodeKind: 'process',
           id: 'script_01',
-          type: 'script_ts',
+          type: 'code',
           description: 'Normalize data',
           input_mapping: { raw_data: '$.trigger.body' },
           script: 'export default (input) => input',
@@ -78,7 +78,7 @@ describe('serializeGraph', () => {
     expect(dsl.nodes).toHaveLength(2)
     const scriptNode = dsl.nodes.find((n) => n.id === 'script_01')
     expect(scriptNode).toBeDefined()
-    expect(scriptNode?.type).toBe('script_ts')
+    expect(scriptNode?.type).toBe('code')
     expect(scriptNode?.next).toEqual(['db_01'])
 
     const dbNode = dsl.nodes.find((n) => n.id === 'db_01')
@@ -100,7 +100,7 @@ describe('serializeGraph', () => {
         data: {
           nodeKind: 'process',
           id: 'n1',
-          type: 'script_ts',
+          type: 'code',
           description: 'Script',
         } as unknown as NodeData,
       },
@@ -128,7 +128,7 @@ describe('serializeGraph', () => {
         data: {
           nodeKind: 'process',
           id: 'n1',
-          type: 'script_ts',
+          type: 'code',
           input_mapping: {
             email: '$.trigger.body.email',
             ts: '$.trigger.headers.date',

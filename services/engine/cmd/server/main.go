@@ -158,8 +158,8 @@ func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor, store 
 			Script       string                 `json:"script"`
 			InputPayload map[string]interface{} `json:"input_payload"`
 			// NodeType lets the UI specify which DSL activity to run (e.g. "log", "http", "sql").
-			// Falls back to "script_ts" when Script is non-empty, or "logger" otherwise.
-			NodeType string                 `json:"node_type"`
+			// Falls back to "code" when Script is non-empty, or "logger" otherwise.
+			NodeType string `json:"node_type"`
 			// Config is the node's configuration forwarded verbatim to the activity.
 			Config map[string]interface{} `json:"config"`
 		}
@@ -174,7 +174,8 @@ func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor, store 
 		case nodeType != "":
 			// Use whatever the UI asked for
 		case req.Script != "":
-			nodeType = "script_ts"
+			// script_ts is deprecated; use "code" for all script executions (ADR 0001)
+			nodeType = "code"
 		default:
 			nodeType = "logger"
 		}
@@ -545,7 +546,6 @@ func handleReplayFrom(w http.ResponseWriter, r *http.Request, processID, nodeID 
 	ctx, execErr := executor.ExecuteFromNode(proc, nodeID, req.NodeInput, "")
 	writeFlowResponse(w, ctx, execErr)
 }
-
 
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
