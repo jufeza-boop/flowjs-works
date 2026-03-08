@@ -8,10 +8,10 @@ services:
     container_name: flowjs-db
     restart: always
     environment:
-      - POSTGRES_USER=admin
-      - POSTGRES_PASSWORD=flowjs_pass
+      - POSTGRES_USER=${POSTGRES_USER:-admin}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-flowjs_pass}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-db:/docker-entrypoint-initdb.d # Para crear las DBs al iniciar
@@ -21,8 +21,8 @@ services:
     image: nats:2.9-alpine
     container_name: flowjs-bus
     ports:
-      - "4222:4222" # Client port
-      - "8222:8222" # HTTP Monitoring port
+      - "${NATS_CLIENT_PORT:-4222}:4222" # Client port
+      - "${NATS_MONITOR_PORT:-8222}:8222" # HTTP Monitoring port
 
   # Audit Logger: consumes NATS audit.logs and persists to PostgreSQL
   audit-logger:
@@ -32,13 +32,13 @@ services:
     container_name: flowjs-audit-logger
     restart: always
     environment:
-      - APP_ENV=development
-      - NATS_URL=nats://nats:4222
-      - POSTGRES_DSN=host=postgres port=5432 user=admin password=flowjs_pass dbname=flowjs_audit sslmode=disable
-      - HTTP_ADDR=:8080
-      - ALLOWED_ORIGINS=http://localhost:5173
+      - APP_ENV=${APP_ENV:-development}
+      - NATS_URL=${NATS_URL:-nats://nats:4222}
+      - POSTGRES_DSN=${POSTGRES_DSN:-host=postgres port=5432 user=admin password=flowjs_pass dbname=flowjs_audit sslmode=disable}
+      - HTTP_ADDR=${AUDIT_HTTP_ADDR:-:8080}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:5173}
     ports:
-      - "8080:8080"
+      - "${AUDIT_PORT:-8080}:8080"
     depends_on:
       - postgres
       - nats
@@ -51,14 +51,14 @@ services:
     container_name: flowjs-engine
     restart: always
     environment:
-      - APP_ENV=development
-      - NATS_URL=nats://nats:4222
-      - DATABASE_URL=postgres://admin:flowjs_pass@postgres:5432/flowjs_config?sslmode=disable
-      - HTTP_ADDR=:9090
-      - SECRETS_AES_KEY=18fc8cf22b9befe4abedbdef9275ed950eac44a12ae971936ee56f3e587e11d5
-      - ALLOWED_ORIGINS=http://localhost:5173
+      - APP_ENV=${APP_ENV:-development}
+      - NATS_URL=${NATS_URL:-nats://nats:4222}
+      - DATABASE_URL=${DATABASE_URL:-postgres://admin:flowjs_pass@postgres:5432/flowjs_config?sslmode=disable}
+      - HTTP_ADDR=${ENGINE_HTTP_ADDR:-:9090}
+      - SECRETS_AES_KEY=${SECRETS_AES_KEY}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:5173}
     ports:
-      - "9090:9090"
+      - "${ENGINE_PORT:-9090}:9090"
     depends_on:
       - nats
       - postgres
@@ -68,10 +68,10 @@ services:
     image: dpage/pgadmin4
     container_name: flowjs-pgadmin
     environment:
-      - PGADMIN_DEFAULT_EMAIL=admin@flowjs.com
-      - PGADMIN_DEFAULT_PASSWORD=admin
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_DEFAULT_EMAIL:-admin@flowjs.com}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_DEFAULT_PASSWORD:-admin}
     ports:
-      - "5050:80"
+      - "${PGADMIN_PORT:-5050}:80"
     depends_on:
       - postgres
 
