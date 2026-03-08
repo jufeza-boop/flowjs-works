@@ -2,6 +2,7 @@ package activities
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -53,12 +54,6 @@ func (a *HTTPActivity) Execute(input map[string]interface{}, config map[string]i
 		method = methodVal
 	}
 
-	// Allow per-request timeout override; fall back to the client's default.
-	client := a.client
-	if timeoutVal, ok := config["timeout"].(float64); ok && timeoutVal > 0 {
-		client = &http.Client{Timeout: time.Duration(timeoutVal) * time.Second}
-	}
-
 	// Prepare request body
 	var bodyReader io.Reader
 	if body, ok := input["body"]; ok && body != nil {
@@ -69,8 +64,17 @@ func (a *HTTPActivity) Execute(input map[string]interface{}, config map[string]i
 		bodyReader = bytes.NewReader(bodyBytes)
 	}
 
+	// Build the request context. When a per-request timeout is specified, wrap with
+	// context.WithTimeout so the shared Transport (and its connection pool) is reused.
+	reqCtx := context.Background()
+	if timeoutVal, ok := config["timeout"].(float64); ok && timeoutVal > 0 {
+		var cancel context.CancelFunc
+		reqCtx, cancel = context.WithTimeout(reqCtx, time.Duration(timeoutVal)*time.Second)
+		defer cancel()
+	}
+
 	// Create request
-	req, err := http.NewRequest(method, url, bodyReader)
+	req, err := http.NewRequestWithContext(reqCtx, method, url, bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -107,7 +111,7 @@ func (a *HTTPActivity) Execute(input map[string]interface{}, config map[string]i
 	}
 
 	// Execute request — transport errors are captured as output, not fatal errors.
-	resp, err := client.Do(req)
+	resp, err := a.client.Do(req)
 	if err != nil {
 		return map[string]interface{}{
 			"status_code": 0,

@@ -194,9 +194,7 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
     setLiveTestError(null)
     try {
       const parsedInput = JSON.parse(liveTestInput) as Record<string, unknown>
-      const script = (data.type as string) === 'script_ts' || (data.type as string) === 'code'
-        ? resolveScript(data) || undefined
-        : undefined
+      const script = resolveScript(data) || undefined
       const result = await liveTest({
         input_mapping: data.input_mapping || {},
         script,

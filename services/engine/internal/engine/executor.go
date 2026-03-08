@@ -205,6 +205,8 @@ func (e *ProcessExecutor) ExecuteFromNode(
 	visited[startNodeID] = true
 
 	var condTrans, noCondTrans, successTrans []models.Transition
+	// errorT is intentionally discarded: the start node in a replay is injected
+	// with a synthetic "replayed" status, so there is no live error to route.
 	condTrans, noCondTrans, successTrans, _ = classifyTransitions(transMap[startNodeID])
 
 	if len(condTrans) > 0 || len(noCondTrans) > 0 {
