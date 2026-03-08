@@ -593,14 +593,18 @@ func parseDurationEnv(key string, def time.Duration) time.Duration {
 }
 
 // aesKeyFromEnv reads a 32-byte AES key from the SECRETS_AES_KEY environment
-// variable. When the variable is absent or too short, a fixed development key is
-// used. Production deployments MUST set SECRETS_AES_KEY to a random 32-byte value.
+// variable. When the variable is absent or too short in non-development environments,
+// the server refuses to start to prevent accidental use of an insecure key.
+// Production deployments MUST set SECRETS_AES_KEY to a random 32-byte value.
 func aesKeyFromEnv(envKey string) []byte {
 	v := os.Getenv(envKey)
 	if len(v) >= 32 {
 		return []byte(v[:32])
 	}
 	// Dev fallback — never use in production
+	if os.Getenv("APP_ENV") != "development" {
+		log.Fatalf("engine-server: %s must be set to a value of at least 32 bytes in non-development environments", envKey)
+	}
 	const devKey = "flowjs-dev-key-00000000000000000"
 	log.Printf("engine-server: WARNING — using insecure dev AES key; set %s in production", envKey)
 	return []byte(devKey[:32])

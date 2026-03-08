@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { SecretMeta, SecretInput, SecretType } from '../types/secrets'
 import { listSecrets, createSecret, deleteSecret } from '../lib/api'
+import { toErrorMessage } from '../lib/errors'
+import { inputClass, selectClass, labelClass } from '../lib/classNames'
 
 const SECRET_TYPES: SecretType[] = ['basic_auth', 'token', 'certificate', 'connection_string', 'aws_credentials', 'ssh_key', 'amqp_url']
 
@@ -51,7 +53,7 @@ export function SecretsManager() {
       const data = await listSecrets()
       setSecrets(data)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(toErrorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -84,7 +86,7 @@ export function SecretsManager() {
       setForm(emptyForm())
       await loadSecrets()
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : String(err))
+      setSaveError(toErrorMessage(err))
     } finally {
       setSaving(false)
     }
@@ -97,17 +99,11 @@ export function SecretsManager() {
       await deleteSecret(id)
       await loadSecrets()
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(toErrorMessage(err))
     } finally {
       setDeletingId(null)
     }
   }
-
-  const inputClass =
-    'w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400'
-  const labelClass = 'block text-xs font-medium text-gray-600 mb-1'
-  const selectClass =
-    'w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white'
 
   const valueFields = SECRET_VALUE_FIELDS[form.type]
 

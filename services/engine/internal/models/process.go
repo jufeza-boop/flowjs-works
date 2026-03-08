@@ -1,7 +1,5 @@
 package models
 
-import "encoding/json"
-
 // =============================================================================
 // flowjs-works — Core DSL Go Models
 // =============================================================================
@@ -87,15 +85,4 @@ type NodeExecution struct {
 	Status string                 `json:"status"` // success, error, warning
 	Output map[string]interface{} `json:"output"`
 	Error  string                 `json:"error,omitempty"`
-}
-
-// UnmarshalJSON custom unmarshaling to handle the process structure
-func (p *Process) UnmarshalJSON(data []byte) error {
-	type Alias Process
-	aux := &struct {
-		*Alias
-	}{
-		Alias: (*Alias)(p),
-	}
-	return json.Unmarshal(data, &aux)
 }

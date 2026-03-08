@@ -10,12 +10,12 @@ import (
 )
 
 func TestHTTPActivity_Name(t *testing.T) {
-	a := &HTTPActivity{}
+	a := NewHTTPActivity()
 	assert.Equal(t, "http", a.Name())
 }
 
 func TestHTTPActivity_MissingURL(t *testing.T) {
-	a := &HTTPActivity{}
+	a := NewHTTPActivity()
 	_, err := a.Execute(nil, map[string]interface{}{}, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "url")
@@ -31,7 +31,7 @@ func TestHTTPActivity_TokenSecretInjectsBearer(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := &HTTPActivity{}
+	a := NewHTTPActivity()
 	_, err := a.Execute(nil, map[string]interface{}{
 		"url":   srv.URL,
 		"token": "my-secret-token",
@@ -50,7 +50,7 @@ func TestHTTPActivity_BasicAuthSecretInjectsHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := &HTTPActivity{}
+	a := NewHTTPActivity()
 	_, err := a.Execute(nil, map[string]interface{}{
 		"url":      srv.URL,
 		"user":     "alice",
@@ -70,7 +70,7 @@ func TestHTTPActivity_ExplicitAuthHeaderOverridesSecret(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := &HTTPActivity{}
+	a := NewHTTPActivity()
 	_, err := a.Execute(nil, map[string]interface{}{
 		"url":   srv.URL,
 		"token": "injected-token",

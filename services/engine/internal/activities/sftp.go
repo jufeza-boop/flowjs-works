@@ -7,7 +7,6 @@ import (
 	"os"
 	"path"
 	"regexp"
-	"time"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
@@ -72,7 +71,7 @@ func (a *SFTPActivity) Execute(input map[string]interface{}, config map[string]i
 	}
 
 	addr := fmt.Sprintf("%s:%d", server, port)
-	conn, err := net.DialTimeout("tcp", addr, 30*time.Second)
+	conn, err := net.DialTimeout("tcp", addr, defaultNetDialTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("sftp activity: TCP dial failed: %w", err)
 	}
@@ -251,29 +250,17 @@ func buildSSHClientConfig(config map[string]interface{}) (*ssh.ClientConfig, err
 	user := "anonymous"
 	var authMethods []ssh.AuthMethod
 
-	// getCredential checks the nested auth map first, then falls back to flat config keys
-	// so that both explicit config["auth"] and secret-injected flat keys work.
-	getCredential := func(key string) string {
-		if authMap, ok := config["auth"].(map[string]interface{}); ok {
-			if v, ok := authMap[key].(string); ok {
-				return v
-			}
-		}
-		v, _ := config[key].(string)
-		return v
-	}
-
-	if u := getCredential("user"); u != "" {
+	if u := getCredential(config, "user"); u != "" {
 		user = u
 	}
-	if pk := getCredential("private_key"); pk != "" {
+	if pk := getCredential(config, "private_key"); pk != "" {
 		signer, err := ssh.ParsePrivateKey([]byte(pk))
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse private_key: %w", err)
 		}
 		authMethods = append(authMethods, ssh.PublicKeys(signer))
 	}
-	if pass := getCredential("password"); pass != "" {
+	if pass := getCredential(config, "password"); pass != "" {
 		authMethods = append(authMethods, ssh.Password(pass))
 	}
 
@@ -287,6 +274,6 @@ func buildSSHClientConfig(config map[string]interface{}) (*ssh.ClientConfig, err
 		User:            user,
 		Auth:            authMethods,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         30 * time.Second,
+		Timeout:         defaultSSHTimeout,
 	}, nil
 }

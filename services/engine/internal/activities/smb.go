@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"time"
 
 	"github.com/hirochachacha/go-smb2"
 
@@ -74,7 +73,7 @@ func (a *SMBActivity) Execute(input map[string]interface{}, config map[string]in
 	user, password, domain := extractSMBAuth(config)
 
 	addr := fmt.Sprintf("%s:%d", server, port)
-	conn, err := net.DialTimeout("tcp", addr, 30*time.Second)
+	conn, err := net.DialTimeout("tcp", addr, defaultNetDialTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("smb activity: TCP dial failed: %w", err)
 	}

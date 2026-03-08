@@ -98,11 +98,10 @@ interface DesignerCanvasProps {
   onGraphLoaded?: () => void
 }
 
-let nodeCounter = 1
-
 /** React Flow canvas with drag-drop, connection and edge cycling */
 export function DesignerCanvas({ onSelectionChange, onNodesChange, onEdgesChange, graphToLoad, onGraphLoaded }: DesignerCanvasProps) {
   const reactFlowWrapper = useRef<HTMLDivElement>(null)
+  const nodeCounterRef = useRef(1)
   const [nodes, setNodes, handleNodesChange] = useNodesState<Node<NodeData>>(initialNodes)
   const [edges, setEdges, handleEdgesChange] = useEdgesState<Edge>([])
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance<Node<NodeData>, Edge> | null>(null)
@@ -195,7 +194,7 @@ export function DesignerCanvas({ onSelectionChange, onNodesChange, onEdgesChange
           })
         : { x: event.clientX - bounds.left, y: event.clientY - bounds.top }
 
-      const id = `${type}_${Date.now()}_${nodeCounter++}`
+      const id = `${type}_${Date.now()}_${nodeCounterRef.current++}`
       const newNode: Node<NodeData> = {
         id,
         type: TYPE_MAP[type],

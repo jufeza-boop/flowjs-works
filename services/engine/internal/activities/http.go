@@ -2,6 +2,7 @@ package activities
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,8 +12,25 @@ import (
 	"flowjs-works/engine/internal/models"
 )
 
-// HTTPActivity makes HTTP requests
-type HTTPActivity struct{}
+const (
+	defaultHTTPTimeout     = 30 * time.Second
+	defaultNetDialTimeout  = 30 * time.Second
+	defaultSSHTimeout      = 30 * time.Second
+	defaultScriptTimeoutMs = 5_000
+)
+
+// HTTPActivity makes HTTP requests.
+// It reuses a shared http.Client to benefit from TCP keep-alive and connection pooling.
+type HTTPActivity struct {
+	client *http.Client
+}
+
+// NewHTTPActivity returns an HTTPActivity with a shared, reusable HTTP client.
+func NewHTTPActivity() *HTTPActivity {
+	return &HTTPActivity{
+		client: &http.Client{Timeout: defaultHTTPTimeout},
+	}
+}
 
 // Name returns the activity type name
 func (a *HTTPActivity) Name() string {
@@ -36,16 +54,6 @@ func (a *HTTPActivity) Execute(input map[string]interface{}, config map[string]i
 		method = methodVal
 	}
 
-	timeout := 30 * time.Second
-	if timeoutVal, ok := config["timeout"].(float64); ok && timeoutVal > 0 {
-		timeout = time.Duration(timeoutVal) * time.Second
-	}
-
-	// Create HTTP client with timeout
-	client := &http.Client{
-		Timeout: timeout,
-	}
-
 	// Prepare request body
 	var bodyReader io.Reader
 	if body, ok := input["body"]; ok && body != nil {
@@ -56,8 +64,17 @@ func (a *HTTPActivity) Execute(input map[string]interface{}, config map[string]i
 		bodyReader = bytes.NewReader(bodyBytes)
 	}
 
+	// Build the request context. When a per-request timeout is specified, wrap with
+	// context.WithTimeout so the shared Transport (and its connection pool) is reused.
+	reqCtx := context.Background()
+	if timeoutVal, ok := config["timeout"].(float64); ok && timeoutVal > 0 {
+		var cancel context.CancelFunc
+		reqCtx, cancel = context.WithTimeout(reqCtx, time.Duration(timeoutVal)*time.Second)
+		defer cancel()
+	}
+
 	// Create request
-	req, err := http.NewRequest(method, url, bodyReader)
+	req, err := http.NewRequestWithContext(reqCtx, method, url, bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -94,7 +111,7 @@ func (a *HTTPActivity) Execute(input map[string]interface{}, config map[string]i
 	}
 
 	// Execute request — transport errors are captured as output, not fatal errors.
-	resp, err := client.Do(req)
+	resp, err := a.client.Do(req)
 	if err != nil {
 		return map[string]interface{}{
 			"status_code": 0,

@@ -215,20 +215,9 @@ func buildS3Client(region string, cfg map[string]interface{}) (*s3.Client, error
 	var opts []func(*config.LoadOptions) error
 	opts = append(opts, config.WithRegion(region))
 
-	// getCredential checks the nested auth map first, then falls back to flat config keys.
-	getCredential := func(key string) string {
-		if authMap, ok := cfg["auth"].(map[string]interface{}); ok {
-			if v, ok := authMap[key].(string); ok {
-				return v
-			}
-		}
-		v, _ := cfg[key].(string)
-		return v
-	}
-
-	accessKey := getCredential("access_key_id")
-	secretKey := getCredential("secret_access_key")
-	sessionToken := getCredential("session_token")
+	accessKey := getCredential(cfg, "access_key_id")
+	secretKey := getCredential(cfg, "secret_access_key")
+	sessionToken := getCredential(cfg, "session_token")
 	if accessKey != "" && secretKey != "" {
 		opts = append(opts, config.WithCredentialsProvider(
 			credentials.NewStaticCredentialsProvider(accessKey, secretKey, sessionToken),
