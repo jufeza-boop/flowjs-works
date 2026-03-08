@@ -35,7 +35,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("audit-logger: %v", err)
 	}
-	defer dbClient.Close()
 
 	// Create batcher that persists via dbClient.
 	b := batcher.New(batcher.DefaultMaxBatchSize, batcher.DefaultFlushInterval, func(events []batcher.AuditEvent) error {
@@ -46,24 +45,38 @@ func main() {
 		log.Printf("audit-logger: persisted batch of %d events", len(events))
 		return nil
 	})
-	defer b.Stop()
 
 	// Subscribe to NATS.
+	// All defers are registered *after* every log.Fatalf call so that gocritic
+	// exitAfterDefer is not triggered (os.Exit skips deferred functions).
+	// Resources created before a fatal path are closed explicitly on that path.
 	sub, err := subscriber.New(natsURL, b)
 	if err != nil {
+		b.Stop()
+		dbClient.Close()
 		log.Fatalf("audit-logger: could not connect to NATS: %v", err)
 	}
 	if err := sub.Start(); err != nil {
+		b.Stop()
+		dbClient.Close()
 		log.Fatalf("audit-logger: could not subscribe to NATS: %v", err)
 	}
-	defer sub.Stop()
-
 	// HTTP API for the Designer frontend.
 	rawDB, err := sql.Open("postgres", pgDSN)
 	if err != nil {
+		sub.Stop()
+		b.Stop()
+		dbClient.Close()
 		log.Fatalf("audit-logger: open raw db for http: %v", err)
 	}
-	defer rawDB.Close()
+	defer sub.Stop()
+	defer b.Stop()
+	defer dbClient.Close()
+	defer func() {
+		if err := rawDB.Close(); err != nil {
+			log.Printf("audit-logger: close raw db: %v", err)
+		}
+	}()
 
 	mux := http.NewServeMux()
 	registerRoutes(mux, rawDB)
@@ -93,9 +106,17 @@ func main() {
 // HTTP route registration
 // ---------------------------------------------------------------------------
 
+// registerRoutes wires all HTTP handlers onto mux. Each handler is extracted
+// into its own function to keep cyclomatic complexity below the project limit.
 func registerRoutes(mux *http.ServeMux, rawDB *sql.DB) {
-	// GET /health — liveness probe
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/health", healthHandler(rawDB))
+	mux.HandleFunc("/executions", listExecutionsHandler(rawDB))
+	mux.HandleFunc("/executions/", executionDetailHandler(rawDB))
+}
+
+// healthHandler returns a liveness-probe handler.
+func healthHandler(rawDB *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -105,63 +126,67 @@ func registerRoutes(mux *http.ServeMux, rawDB *sql.DB) {
 			return
 		}
 		jsonOK(w, map[string]string{"status": "ok", "service": "audit-logger"})
-	})
+	}
+}
 
-	// GET /executions — list execution headers with optional filtering and pagination.
-	// Query params:
-	//   ?status=STARTED|COMPLETED|FAILED|REPLAYED — filter by status
-	//   ?search=<text>                             — full-text search over activity_logs JSONB
-	//   ?limit=<n>  (default 50, max 200)
-	//   ?offset=<n> (default 0)
-	// Response header X-Total-Count holds the total matching row count.
-	mux.HandleFunc("/executions", func(w http.ResponseWriter, r *http.Request) {
+// parsePagination reads ?limit and ?offset from the query string and applies
+// safe bounds (max 200 for limit, non-negative for offset).
+func parsePagination(q map[string][]string) (limit, offset int) {
+	limit = 50
+	if s := q["limit"]; len(s) > 0 {
+		if n, err := strconv.Atoi(s[0]); err == nil && n > 0 {
+			if n > 200 {
+				n = 200
+			}
+			limit = n
+		}
+	}
+	if s := q["offset"]; len(s) > 0 {
+		if n, err := strconv.Atoi(s[0]); err == nil && n >= 0 {
+			offset = n
+		}
+	}
+	return limit, offset
+}
+
+// buildWhereClause constructs the SQL WHERE fragment and positional args for the
+// optional status and full-text search filters.
+func buildWhereClause(statusFilter, searchFilter string) (string, []interface{}) {
+	var parts []string
+	var args []interface{}
+
+	if statusFilter != "" {
+		args = append(args, statusFilter)
+		parts = append(parts, fmt.Sprintf("e.status = $%d", len(args)))
+	}
+	if searchFilter != "" {
+		args = append(args, searchFilter)
+		parts = append(parts, fmt.Sprintf(
+			"EXISTS (SELECT 1 FROM activity_logs al WHERE al.execution_id = e.execution_id"+
+				" AND (al.input_data::text ILIKE '%%' || $%d || '%%'"+
+				" OR al.output_data::text ILIKE '%%' || $%d || '%%'))",
+			len(args), len(args),
+		))
+	}
+
+	if len(parts) == 0 {
+		return "", args
+	}
+	return "WHERE " + strings.Join(parts, " AND "), args
+}
+
+// listExecutionsHandler returns a handler that lists execution headers with
+// optional filtering and pagination.
+func listExecutionsHandler(rawDB *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
 		q := r.URL.Query()
-		statusFilter := q.Get("status")
-		searchFilter := q.Get("search")
-
-		limit := 50
-		if s := q.Get("limit"); s != "" {
-			if n, err := strconv.Atoi(s); err == nil && n > 0 {
-				if n > 200 {
-					n = 200
-				}
-				limit = n
-			}
-		}
-		offset := 0
-		if s := q.Get("offset"); s != "" {
-			if n, err := strconv.Atoi(s); err == nil && n >= 0 {
-				offset = n
-			}
-		}
-
-		// Build dynamic WHERE clause.
-		var whereParts []string
-		var args []interface{}
-
-		if statusFilter != "" {
-			args = append(args, statusFilter)
-			whereParts = append(whereParts, fmt.Sprintf("e.status = $%d", len(args)))
-		}
-		if searchFilter != "" {
-			args = append(args, searchFilter)
-			whereParts = append(whereParts, fmt.Sprintf(
-				"EXISTS (SELECT 1 FROM activity_logs al WHERE al.execution_id = e.execution_id"+
-					" AND (al.input_data::text ILIKE '%%' || $%d || '%%'"+
-					" OR al.output_data::text ILIKE '%%' || $%d || '%%'))",
-				len(args), len(args),
-			))
-		}
-
-		whereSQL := ""
-		if len(whereParts) > 0 {
-			whereSQL = "WHERE " + strings.Join(whereParts, " AND ")
-		}
+		limit, offset := parsePagination(q)
+		whereSQL, args := buildWhereClause(q.Get("status"), q.Get("search"))
 
 		// Total matching count for X-Total-Count header.
 		var total int
@@ -171,7 +196,6 @@ func registerRoutes(mux *http.ServeMux, rawDB *sql.DB) {
 			return
 		}
 
-		// Paginated data query.
 		paginatedArgs := make([]interface{}, len(args)+2)
 		copy(paginatedArgs, args)
 		paginatedArgs[len(args)] = limit
@@ -190,7 +214,11 @@ func registerRoutes(mux *http.ServeMux, rawDB *sql.DB) {
 			jsonError(w, "query executions: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		defer rows.Close()
+		defer func() {
+			if err := rows.Close(); err != nil {
+				log.Printf("audit-logger: close executions rows: %v", err)
+			}
+		}()
 
 		type ExecutionRow struct {
 			ExecutionID      string `json:"execution_id"`
@@ -222,17 +250,17 @@ func registerRoutes(mux *http.ServeMux, rawDB *sql.DB) {
 
 		w.Header().Set("X-Total-Count", strconv.Itoa(total))
 		jsonOK(w, results)
-	})
+	}
+}
 
-	// GET /executions/{id}/logs         — list activity logs for a specific execution
-	// GET /executions/{id}/trigger-data  — return the trigger input_data for an execution
-	mux.HandleFunc("/executions/", func(w http.ResponseWriter, r *http.Request) {
+// executionDetailHandler handles /executions/{id}/logs and /executions/{id}/trigger-data.
+func executionDetailHandler(rawDB *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		// Parse execution_id and optional sub-resource from path.
 		rest := strings.TrimPrefix(r.URL.Path, "/executions/")
 		var executionID, subResource string
 		if idx := strings.Index(rest, "/"); idx >= 0 {
@@ -249,90 +277,96 @@ func registerRoutes(mux *http.ServeMux, rawDB *sql.DB) {
 
 		switch subResource {
 		case "logs", "":
-			rows, err := rawDB.QueryContext(r.Context(), `
-				SELECT log_id, node_id, COALESCE(node_type,''), status,
-				       input_data, output_data, error_details,
-				       COALESCE(duration_ms,0), created_at
-				FROM activity_logs
-				WHERE execution_id = $1
-				ORDER BY created_at ASC`, executionID)
-			if err != nil {
-				jsonError(w, "query activity_logs: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-			defer rows.Close()
-
-			type LogRow struct {
-				LogID        int64           `json:"log_id"`
-				NodeID       string          `json:"node_id"`
-				NodeType     string          `json:"node_type"`
-				Status       string          `json:"status"`
-				InputData    json.RawMessage `json:"input_data"`
-				OutputData   json.RawMessage `json:"output_data"`
-				ErrorDetails json.RawMessage `json:"error_details"`
-				DurationMs   int             `json:"duration_ms"`
-				CreatedAt    string          `json:"created_at"`
-			}
-			var results []LogRow
-			for rows.Next() {
-				var lr LogRow
-				var (
-					inputRaw  []byte
-					outputRaw []byte
-					errorRaw  []byte
-					createdAt time.Time
-				)
-				if err := rows.Scan(
-					&lr.LogID, &lr.NodeID, &lr.NodeType, &lr.Status,
-					&inputRaw, &outputRaw, &errorRaw, &lr.DurationMs, &createdAt,
-				); err != nil {
-					jsonError(w, "scan log: "+err.Error(), http.StatusInternalServerError)
-					return
-				}
-				lr.CreatedAt = createdAt.Format(time.RFC3339)
-				lr.InputData = nullableJSON(inputRaw)
-				lr.OutputData = nullableJSON(outputRaw)
-				lr.ErrorDetails = nullableJSON(errorRaw)
-				results = append(results, lr)
-			}
-			if results == nil {
-				results = []LogRow{}
-			}
-			jsonOK(w, results)
-
+			serveExecutionLogs(w, r, rawDB, executionID)
 		case "trigger-data":
-			// Return the original trigger payload stored with the process-start audit event.
-			// We extract input_data->'trigger' to get just the trigger data, not the wrapper object.
-			var inputRaw []byte
-			err := rawDB.QueryRowContext(r.Context(), `
-				SELECT COALESCE(input_data->'trigger', '{}')
-				FROM activity_logs
-				WHERE execution_id = $1
-				  AND node_type = 'process'
-				  AND status = 'STARTED'
-				ORDER BY created_at ASC
-				LIMIT 1`, executionID).Scan(&inputRaw)
-			if err == sql.ErrNoRows {
-				jsonError(w, "trigger data not found for execution "+executionID, http.StatusNotFound)
-				return
-			}
-			if err != nil {
-				jsonError(w, "query trigger data: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			payload := inputRaw
-			if len(payload) == 0 {
-				payload = []byte("{}")
-			}
-			if _, writeErr := w.Write(payload); writeErr != nil {
-				log.Printf("audit-logger: write trigger-data response: %v", writeErr)
-			}
-
+			serveExecutionTriggerData(w, r, rawDB, executionID)
 		default:
 			jsonError(w, fmt.Sprintf("unknown sub-resource: %q", subResource), http.StatusNotFound)
 		}
-	})
+	}
+}
+
+// serveExecutionLogs writes the activity-log rows for a given execution.
+func serveExecutionLogs(w http.ResponseWriter, r *http.Request, rawDB *sql.DB, executionID string) {
+	rows, err := rawDB.QueryContext(r.Context(), `
+		SELECT log_id, node_id, COALESCE(node_type,''), status,
+		       input_data, output_data, error_details,
+		       COALESCE(duration_ms,0), created_at
+		FROM activity_logs
+		WHERE execution_id = $1
+		ORDER BY created_at ASC`, executionID)
+	if err != nil {
+		jsonError(w, "query activity_logs: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("audit-logger: close activity_logs rows: %v", err)
+		}
+	}()
+
+	type LogRow struct {
+		LogID        int64           `json:"log_id"`
+		NodeID       string          `json:"node_id"`
+		NodeType     string          `json:"node_type"`
+		Status       string          `json:"status"`
+		InputData    json.RawMessage `json:"input_data"`
+		OutputData   json.RawMessage `json:"output_data"`
+		ErrorDetails json.RawMessage `json:"error_details"`
+		DurationMs   int             `json:"duration_ms"`
+		CreatedAt    string          `json:"created_at"`
+	}
+	var results []LogRow
+	for rows.Next() {
+		var lr LogRow
+		var inputRaw, outputRaw, errorRaw []byte
+		var createdAt time.Time
+		if err := rows.Scan(
+			&lr.LogID, &lr.NodeID, &lr.NodeType, &lr.Status,
+			&inputRaw, &outputRaw, &errorRaw, &lr.DurationMs, &createdAt,
+		); err != nil {
+			jsonError(w, "scan log: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		lr.CreatedAt = createdAt.Format(time.RFC3339)
+		lr.InputData = nullableJSON(inputRaw)
+		lr.OutputData = nullableJSON(outputRaw)
+		lr.ErrorDetails = nullableJSON(errorRaw)
+		results = append(results, lr)
+	}
+	if results == nil {
+		results = []LogRow{}
+	}
+	jsonOK(w, results)
+}
+
+// serveExecutionTriggerData writes the original trigger payload for a given execution.
+func serveExecutionTriggerData(w http.ResponseWriter, r *http.Request, rawDB *sql.DB, executionID string) {
+	var inputRaw []byte
+	err := rawDB.QueryRowContext(r.Context(), `
+		SELECT COALESCE(input_data->'trigger', '{}')
+		FROM activity_logs
+		WHERE execution_id = $1
+		  AND node_type = 'process'
+		  AND status = 'STARTED'
+		ORDER BY created_at ASC
+		LIMIT 1`, executionID).Scan(&inputRaw)
+	if err == sql.ErrNoRows {
+		jsonError(w, "trigger data not found for execution "+executionID, http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		jsonError(w, "query trigger data: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	payload := inputRaw
+	if len(payload) == 0 {
+		payload = []byte("{}")
+	}
+	if _, writeErr := w.Write(payload); writeErr != nil {
+		log.Printf("audit-logger: write trigger-data response: %v", writeErr)
+	}
 }
 
 // ---------------------------------------------------------------------------

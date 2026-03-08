@@ -117,7 +117,11 @@ func upsertExecutions(tx *sql.Tx, events []batcher.AuditEvent) error {
 	if err != nil {
 		return fmt.Errorf("prepare insert executions: %w", err)
 	}
-	defer insertStmt.Close()
+	defer func() {
+		if err := insertStmt.Close(); err != nil {
+			log.Printf("audit-logger: close insert executions stmt: %v", err)
+		}
+	}()
 
 	// Update terminal status for finished executions.
 	updateStmt, err := tx.Prepare(`
@@ -127,7 +131,11 @@ func upsertExecutions(tx *sql.Tx, events []batcher.AuditEvent) error {
 	if err != nil {
 		return fmt.Errorf("prepare update executions: %w", err)
 	}
-	defer updateStmt.Close()
+	defer func() {
+		if err := updateStmt.Close(); err != nil {
+			log.Printf("audit-logger: close update executions stmt: %v", err)
+		}
+	}()
 
 	for id, info := range infos {
 		if _, err := insertStmt.Exec(id, info.flowID, info.triggerType); err != nil {
@@ -170,21 +178,28 @@ func classifyExecutions(events []batcher.AuditEvent) map[string]*execInfo {
 		} else if info.flowID == "unknown" && e.FlowID != "" {
 			info.flowID = e.FlowID
 		}
-		// A process-type event with a terminal status finalises the execution.
-		if e.NodeType == "process" {
-			status := strings.ToUpper(e.Status)
-			if status == "COMPLETED" || status == "FAILED" || status == "REPLAYED" {
-				info.terminalStatus = status
-				info.errorMsg = e.ErrorMsg
-			}
-		}
-		// Mark executions that originate from lifecycle (deploy/stop) events so
-		// they can be excluded from the user-facing execution history.
-		if e.NodeType == "lifecycle" && info.triggerType == "" {
-			info.triggerType = "lifecycle"
-		}
+		updateExecInfo(info, e)
 	}
 	return infos
+}
+
+// updateExecInfo applies process- and lifecycle-level status updates from a
+// single audit event onto an existing execInfo. Extracted from classifyExecutions
+// to keep cyclomatic complexity below the project limit of 10.
+func updateExecInfo(info *execInfo, e batcher.AuditEvent) {
+	// A process-type event with a terminal status finalises the execution.
+	if e.NodeType == "process" {
+		status := strings.ToUpper(e.Status)
+		if status == "COMPLETED" || status == "FAILED" || status == "REPLAYED" {
+			info.terminalStatus = status
+			info.errorMsg = e.ErrorMsg
+		}
+	}
+	// Mark executions that originate from lifecycle (deploy/stop) events so
+	// they can be excluded from the user-facing execution history.
+	if e.NodeType == "lifecycle" && info.triggerType == "" {
+		info.triggerType = "lifecycle"
+	}
 }
 
 // insertActivityLogs inserts all events in a single parameterised multi-row INSERT.

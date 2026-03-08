@@ -1,13 +1,13 @@
 # golangci-lint configuration for flowjs-works
 # ADR 0001: CI lint gate — prevents accumulation of code smells.
 # https://golangci-lint.run/usage/configuration/
-# Compatible with golangci-lint v1.x
+# Requires golangci-lint v2.x (v2 schema)
+
+version: "2"
 
 linters:
-  disable-all: true
+  default: none
   enable:
-    # Format
-    - gofmt          # Enforces canonical Go formatting (ADR #2 / standard #8)
     # Correctness
     - govet          # Reports suspicious constructs found by go vet
     - errcheck       # Checks that error return values are used (ADR rule #1)
@@ -19,23 +19,20 @@ linters:
     - gocritic       # Opinionated linter with many checks
     - misspell       # Catches common spelling mistakes in comments/strings
     - unused         # Reports unused code
+  settings:
+    gocyclo:
+      # AGENTS.md: cyclomatic complexity must not exceed 10
+      min-complexity: 10
+    dupl:
+      # Flag duplicated blocks of >= 100 tokens
+      threshold: 100
+    errcheck:
+      # Also check errors returned by type-asserted expressions
+      check-type-assertions: true
 
-linters-settings:
-  gofmt:
-    # Enforce canonical tab indentation (ADR #2)
-    simplify: true
-
-  gocyclo:
-    # AGENTS.md: cyclomatic complexity must not exceed 10
-    min-complexity: 10
-
-  dupl:
-    # Flag duplicated blocks of >= 100 tokens
-    threshold: 100
-
-  errcheck:
-    # Also check errors returned by type-asserted expressions
-    check-type-assertions: true
+# NOTE: gofmt formatting is enforced by the dedicated lefthook gofmt-* steps
+# (gofmt -w), not by golangci-lint. In golangci-lint v2, gofmt is classified
+# as a formatter and cannot be listed under linters, so it is omitted here.
 
 issues:
   # Show all issues, not just the first 3 per linter
