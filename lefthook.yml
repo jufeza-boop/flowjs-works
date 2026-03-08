@@ -1,0 +1,49 @@
+# lefthook.yml — Pre-commit hooks para flowjs-works
+# ADR 0001: gofmt + golangci-lint + eslint --max-warnings 0
+#
+# Instalación (una sola vez por clon):
+#   go install github.com/evilmartians/lefthook@latest
+#   lefthook install
+#
+# Ejecución manual sin hacer commit:
+#   lefthook run pre-commit
+
+pre-commit:
+  # Los comandos se ejecutan en el orden definido (sin parallel: true)
+  # para garantizar que gofmt auto-corrige ANTES de que golangci-lint valide.
+  commands:
+
+    # ── 1. gofmt: auto-formatea y re-indexa los archivos corregidos ──────────
+    gofmt-engine:
+      name: "gofmt — services/engine"
+      root: "services/engine"
+      glob: "**/*.go"
+      run: gofmt -w {staged_files}
+      stage_fixed: true
+
+    gofmt-audit-logger:
+      name: "gofmt — services/audit-logger"
+      root: "services/audit-logger"
+      glob: "**/*.go"
+      run: gofmt -w {staged_files}
+      stage_fixed: true
+
+    # ── 2. golangci-lint: unconvert, gocyclo, errcheck, dupl, staticcheck… ───
+    golangci-lint-engine:
+      name: "golangci-lint — services/engine"
+      root: "services/engine"
+      glob: "**/*.go"
+      run: golangci-lint run --config ../../.golangci.yml
+
+    golangci-lint-audit-logger:
+      name: "golangci-lint — services/audit-logger"
+      root: "services/audit-logger"
+      glob: "**/*.go"
+      run: golangci-lint run --config ../../.golangci.yml
+
+    # ── 3. ESLint: política de cero warnings (ADR 0001 §9-§15) ──────────────
+    eslint-designer:
+      name: "ESLint — apps/designer"
+      root: "apps/designer"
+      glob: "src/**/*.{ts,tsx}"
+      run: npm run lint -- --max-warnings 0
