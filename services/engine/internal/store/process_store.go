@@ -112,11 +112,11 @@ func (s *ProcessStore) List(ctx context.Context, statusFilter string) ([]Process
 
 	var result []ProcessSummary
 	for rows.Next() {
-		var s ProcessSummary
-		if err := rows.Scan(&s.ID, &s.Version, &s.Name, &s.Status, &s.TriggerType, &s.UpdatedAt); err != nil {
+		var summary ProcessSummary
+		if err := rows.Scan(&summary.ID, &summary.Version, &summary.Name, &summary.Status, &summary.TriggerType, &summary.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("process_store: scan summary: %w", err)
 		}
-		result = append(result, s)
+		result = append(result, summary)
 	}
 	return result, rows.Err()
 }

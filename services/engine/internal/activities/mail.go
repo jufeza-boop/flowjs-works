@@ -12,6 +12,10 @@ import (
 	fmodels "flowjs-works/engine/internal/models"
 )
 
+// defaultSMTPPort is the SMTP submission port used when the config does not
+// specify a "port" field.
+const defaultSMTPPort = 587
+
 // MailActivity implements the `mail` node type.
 // config fields:
 //
@@ -44,13 +48,29 @@ func (a *MailActivity) Execute(input map[string]interface{}, config map[string]i
 	}
 }
 
+// extractStringSlice converts a config value that is []interface{} of strings
+// into a []string, silently ignoring non-string elements.
+func extractStringSlice(v interface{}) []string {
+	raw, ok := v.([]interface{})
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		if s, ok := item.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 func mailSend(config map[string]interface{}) (map[string]interface{}, error) {
 	host, _ := config["host"].(string)
 	if host == "" {
 		return nil, fmt.Errorf("mail activity: missing required config field 'host'")
 	}
 
-	port := 587
+	port := defaultSMTPPort
 	switch v := config["port"].(type) {
 	case int:
 		port = v
@@ -71,24 +91,9 @@ func mailSend(config map[string]interface{}) (map[string]interface{}, error) {
 	subject, _ := config["subject"].(string)
 	body, _ := config["body"].(string)
 
-	var toList []string
-	if to, ok := config["to"].([]interface{}); ok {
-		for _, t := range to {
-			if s, ok := t.(string); ok {
-				toList = append(toList, s)
-			}
-		}
-	}
-	var ccList []string
-	if cc, ok := config["cc"].([]interface{}); ok {
-		for _, c := range cc {
-			if s, ok := c.(string); ok {
-				ccList = append(ccList, s)
-			}
-		}
-	}
+	toList := extractStringSlice(config["to"])
+	ccList := extractStringSlice(config["cc"])
 
-	var fromUser, fromPass string
 	// Credentials are read from config["auth"] (nested map) when present, or from
 	// flat top-level keys (user, password) injected by the secret resolver.
 	getCredential := func(key string) string {
@@ -100,8 +105,8 @@ func mailSend(config map[string]interface{}) (map[string]interface{}, error) {
 		v, _ := config[key].(string)
 		return v
 	}
-	fromUser = getCredential("user")
-	fromPass = getCredential("password")
+	fromUser := getCredential("user")
+	fromPass := getCredential("password")
 
 	addr := fmt.Sprintf("%s:%d", host, port)
 	headers := fmt.Sprintf("From: %s\r\nTo: %s\r\nCc: %s\r\nSubject: %s\r\nContent-Type: %s\r\n\r\n%s",

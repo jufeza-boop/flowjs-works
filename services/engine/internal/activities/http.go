@@ -11,6 +11,10 @@ import (
 	"flowjs-works/engine/internal/models"
 )
 
+// defaultHTTPTimeoutSec is the HTTP request timeout used when the config
+// does not specify a "timeout" field.
+const defaultHTTPTimeoutSec = 30
+
 // HTTPActivity makes HTTP requests
 type HTTPActivity struct{}
 
@@ -36,7 +40,7 @@ func (a *HTTPActivity) Execute(input map[string]interface{}, config map[string]i
 		method = methodVal
 	}
 
-	timeout := 30 * time.Second
+	timeout := defaultHTTPTimeoutSec * time.Second
 	if timeoutVal, ok := config["timeout"].(float64); ok && timeoutVal > 0 {
 		timeout = time.Duration(timeoutVal) * time.Second
 	}
@@ -130,3 +134,11 @@ func (a *HTTPActivity) Execute(input map[string]interface{}, config map[string]i
 		"body":        responseData,
 	}, nil
 }
+
+// HTTPRequestActivity is an alias of HTTPActivity registered under the name
+// "http_request" for backward compatibility with DSL flows and tests that use
+// that type string.
+type HTTPRequestActivity struct{ HTTPActivity }
+
+// Name returns the activity type name "http_request".
+func (a *HTTPRequestActivity) Name() string { return "http_request" }

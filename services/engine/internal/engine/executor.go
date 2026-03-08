@@ -17,6 +17,11 @@ import (
 	nats "github.com/nats-io/nats.go"
 )
 
+// defaultRetryIntervalSecs is the sleep duration between retry attempts when
+// a node has a RetryPolicy. The RetryPolicy.Interval field is reserved for
+// future full parsing support.
+const defaultRetryIntervalSecs = 2
+
 // ProcessExecutor executes a workflow process
 type ProcessExecutor struct {
 	activityRegistry *activities.ActivityRegistry
@@ -201,43 +206,7 @@ func (e *ProcessExecutor) ExecuteFromNode(
 	visited := make(map[string]bool)
 	visited[startNodeID] = true
 
-	var condTrans, noCondTrans, successTrans []models.Transition
-	for _, t := range transMap[startNodeID] {
-		switch t.Type {
-		case "condition":
-			condTrans = append(condTrans, t)
-		case "nocondition":
-			noCondTrans = append(noCondTrans, t)
-		case "success":
-			successTrans = append(successTrans, t)
-		}
-	}
-
-	if len(condTrans) > 0 || len(noCondTrans) > 0 {
-		dispatched := false
-		for _, t := range condTrans {
-			if evaluateCondition(t.Condition, ctx) {
-				err = e.executeChain(t.To, nodeMap, transMap, ctx, visited)
-				dispatched = true
-				break
-			}
-		}
-		if !dispatched {
-			for _, t := range noCondTrans {
-				if chainErr := e.executeChain(t.To, nodeMap, transMap, ctx, visited); chainErr != nil {
-					err = chainErr
-					break
-				}
-			}
-		}
-	} else {
-		for _, t := range successTrans {
-			if chainErr := e.executeChain(t.To, nodeMap, transMap, ctx, visited); chainErr != nil {
-				err = chainErr
-				break
-			}
-		}
-	}
+	err = e.dispatchTransitions(transMap[startNodeID], nodeMap, transMap, ctx, visited)
 
 	if err != nil {
 		return ctx, err
@@ -259,35 +228,24 @@ func isSequentialMode(process *models.Process) bool {
 	return true
 }
 
-func (e *ProcessExecutor) executeChain(nodeID string, nodeMap map[string]*models.Node, transMap map[string][]models.Transition, ctx *models.ExecutionContext, visited map[string]bool) error {
-	if visited[nodeID] {
-		return fmt.Errorf("cycle detected: node %s", nodeID)
-	}
-	visited[nodeID] = true
-
-	node := nodeMap[nodeID]
-	nodeErr := e.executeNode(node, ctx)
-	transitions := transMap[nodeID]
-
-	if nodeErr != nil {
-		var errorTrans []models.Transition
-		for _, t := range transitions {
-			if t.Type == "error" {
-				errorTrans = append(errorTrans, t)
-			}
-		}
-		if len(errorTrans) == 0 {
-			return nodeErr
-		}
-		for _, t := range errorTrans {
-			if err := e.executeChain(t.To, nodeMap, transMap, ctx, visited); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-
-	// Collect transitions by type
+// dispatchTransitions executes downstream chains based on transition types.
+// Evaluation order:
+//  1. Condition transitions are tested in declaration order; the first one that
+//     evaluates to true is followed and the function returns immediately — only
+//     one condition branch is ever executed.
+//  2. If no condition matched (or there are no condition transitions at all),
+//     all nocondition transitions are followed sequentially.
+//  3. When neither condition nor nocondition transitions exist, all success
+//     transitions are followed sequentially.
+//
+// Error transitions are handled separately by executeChain before this call.
+func (e *ProcessExecutor) dispatchTransitions(
+	transitions []models.Transition,
+	nodeMap map[string]*models.Node,
+	transMap map[string][]models.Transition,
+	ctx *models.ExecutionContext,
+	visited map[string]bool,
+) error {
 	var condTrans, noCondTrans, successTrans []models.Transition
 	for _, t := range transitions {
 		switch t.Type {
@@ -320,6 +278,37 @@ func (e *ProcessExecutor) executeChain(nodeID string, nodeMap map[string]*models
 		}
 	}
 	return nil
+}
+
+func (e *ProcessExecutor) executeChain(nodeID string, nodeMap map[string]*models.Node, transMap map[string][]models.Transition, ctx *models.ExecutionContext, visited map[string]bool) error {
+	if visited[nodeID] {
+		return fmt.Errorf("cycle detected: node %s", nodeID)
+	}
+	visited[nodeID] = true
+
+	node := nodeMap[nodeID]
+	nodeErr := e.executeNode(node, ctx)
+	transitions := transMap[nodeID]
+
+	if nodeErr != nil {
+		var errorTrans []models.Transition
+		for _, t := range transitions {
+			if t.Type == "error" {
+				errorTrans = append(errorTrans, t)
+			}
+		}
+		if len(errorTrans) == 0 {
+			return nodeErr
+		}
+		for _, t := range errorTrans {
+			if err := e.executeChain(t.To, nodeMap, transMap, ctx, visited); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	return e.dispatchTransitions(transitions, nodeMap, transMap, ctx, visited)
 }
 
 var jsonPathRe = regexp.MustCompile(`\$\.[a-zA-Z0-9_.\[\]]+`)
@@ -427,7 +416,7 @@ func (e *ProcessExecutor) executeNode(node *models.Node, ctx *models.ExecutionCo
 		}
 		if attempt < maxAttempts {
 			log.Printf("Node %s attempt %d/%d failed: %v. Retrying...", node.ID, attempt, maxAttempts, err)
-			time.Sleep(2 * time.Second)
+			time.Sleep(defaultRetryIntervalSecs * time.Second)
 		}
 	}
 
