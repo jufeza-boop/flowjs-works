@@ -11,8 +11,25 @@ import (
 	"flowjs-works/engine/internal/models"
 )
 
-// HTTPActivity makes HTTP requests
-type HTTPActivity struct{}
+const (
+	defaultHTTPTimeout     = 30 * time.Second
+	defaultNetDialTimeout  = 30 * time.Second
+	defaultSSHTimeout      = 30 * time.Second
+	defaultScriptTimeoutMs = 5_000
+)
+
+// HTTPActivity makes HTTP requests.
+// It reuses a shared http.Client to benefit from TCP keep-alive and connection pooling.
+type HTTPActivity struct {
+	client *http.Client
+}
+
+// NewHTTPActivity returns an HTTPActivity with a shared, reusable HTTP client.
+func NewHTTPActivity() *HTTPActivity {
+	return &HTTPActivity{
+		client: &http.Client{Timeout: defaultHTTPTimeout},
+	}
+}
 
 // Name returns the activity type name
 func (a *HTTPActivity) Name() string {
@@ -36,14 +53,10 @@ func (a *HTTPActivity) Execute(input map[string]interface{}, config map[string]i
 		method = methodVal
 	}
 
-	timeout := 30 * time.Second
+	// Allow per-request timeout override; fall back to the client's default.
+	client := a.client
 	if timeoutVal, ok := config["timeout"].(float64); ok && timeoutVal > 0 {
-		timeout = time.Duration(timeoutVal) * time.Second
-	}
-
-	// Create HTTP client with timeout
-	client := &http.Client{
-		Timeout: timeout,
+		client = &http.Client{Timeout: time.Duration(timeoutVal) * time.Second}
 	}
 
 	// Prepare request body

@@ -110,8 +110,7 @@ func (ctx *ExecutionContext) GetValue(path string) (interface{}, error) {
 			if !ok {
 				return nil, fmt.Errorf("path not found: %s at part %s", path, part)
 			}
-			// Convert to interface{} to continue traversal
-			current = interface{}(val)
+			current = val
 		default:
 			return nil, fmt.Errorf("cannot traverse path %s: not a map at part %s (type: %T)", path, part, current)
 		}

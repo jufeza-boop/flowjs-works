@@ -10,25 +10,14 @@ import { DebugPanel } from './components/DebugPanel'
 import { SecretsManager } from './components/SecretsManager'
 import { ProcessManager } from './components/ProcessManager'
 import { NameDialog } from './components/NameDialog'
-import { serializeGraph } from './lib/serializer'
+import { serializeGraph, DEFAULT_DEFINITION } from './lib/serializer'
 import { deserializeGraph } from './lib/deserializer'
 import { slugify } from './lib/slugify'
 import { runFlow, saveProcess, getProcess } from './lib/api'
 import type { RunFlowResponse } from './lib/api'
 import type { NodeData, DesignerNode } from './types/designer'
 import type { FlowDefinition } from './types/dsl'
-
-const DEFAULT_DEFINITION: FlowDefinition = {
-  id: 'new-flow',
-  version: '1.0.0',
-  name: 'New Flow',
-  description: '',
-  settings: {
-    persistence: 'full',
-    timeout: 30000,
-    error_strategy: 'stop_and_rollback',
-  },
-}
+import { toErrorMessage } from './lib/errors'
 
 /** Returns a blank React Flow graph (just the default trigger node). */
 function makeInitialGraph(): { nodes: Node<NodeData>[]; edges: Edge[] } {
@@ -115,7 +104,7 @@ export default function App() {
         setRunRawResult(JSON.stringify(result, null, 2))
       }
     } catch (err) {
-      setRunError(err instanceof Error ? err.message : String(err))
+      setRunError(toErrorMessage(err))
     } finally {
       setRunLoading(false)
     }
@@ -127,6 +116,13 @@ export default function App() {
     setRunError(null)
   }, [])
 
+  /** Shows a transient "Saved ✓" message for TOAST_DURATION_MS milliseconds. */
+  const TOAST_DURATION_MS = 3_000
+  const showSaveSuccess = useCallback(() => {
+    setSaveMsg('Saved ✓')
+    setTimeout(() => setSaveMsg(null), TOAST_DURATION_MS)
+  }, [])
+
   // ── Save current flow to the DB ──────────────────────────────────────────
 
   const handleSave = useCallback(async () => {
@@ -135,14 +131,13 @@ export default function App() {
     try {
       const dsl = serializeGraph(nodes, edges, definition)
       await saveProcess(dsl)
-      setSaveMsg('Saved ✓')
-      setTimeout(() => setSaveMsg(null), 3000)
+      showSaveSuccess()
     } catch (err) {
-      setSaveMsg(err instanceof Error ? err.message : String(err))
+      setSaveMsg(toErrorMessage(err))
     } finally {
       setSaving(false)
     }
-  }, [nodes, edges, definition])
+  }, [nodes, edges, definition, showSaveSuccess])
 
   // ── Load a saved process into the designer for editing ───────────────────
 
@@ -154,7 +149,7 @@ export default function App() {
       setGraphToLoad(loaded)
       setView('designer')
     } catch (err) {
-      setRunError(err instanceof Error ? err.message : String(err))
+      setRunError(toErrorMessage(err))
     }
   }, [])
 
@@ -190,14 +185,13 @@ export default function App() {
       await saveProcess(dsl)
       // Switch the designer to the newly saved copy
       setDefinition(newDefinition)
-      setSaveMsg('Saved ✓')
-      setTimeout(() => setSaveMsg(null), 3000)
+      showSaveSuccess()
     } catch (err) {
-      setSaveMsg(err instanceof Error ? err.message : String(err))
+      setSaveMsg(toErrorMessage(err))
     } finally {
       setSaving(false)
     }
-  }, [definition, nodes, edges])
+  }, [definition, nodes, edges, showSaveSuccess])
 
   return (
     <div className="h-screen w-screen flex flex-col bg-white overflow-hidden">

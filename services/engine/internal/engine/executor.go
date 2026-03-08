@@ -17,6 +17,9 @@ import (
 	nats "github.com/nats-io/nats.go"
 )
 
+// retryBaseInterval is the delay between consecutive retry attempts for a node execution.
+const retryBaseInterval = 2 * time.Second
+
 // ProcessExecutor executes a workflow process
 type ProcessExecutor struct {
 	activityRegistry *activities.ActivityRegistry
@@ -202,16 +205,7 @@ func (e *ProcessExecutor) ExecuteFromNode(
 	visited[startNodeID] = true
 
 	var condTrans, noCondTrans, successTrans []models.Transition
-	for _, t := range transMap[startNodeID] {
-		switch t.Type {
-		case "condition":
-			condTrans = append(condTrans, t)
-		case "nocondition":
-			noCondTrans = append(noCondTrans, t)
-		case "success":
-			successTrans = append(successTrans, t)
-		}
-	}
+	condTrans, noCondTrans, successTrans, _ = classifyTransitions(transMap[startNodeID])
 
 	if len(condTrans) > 0 || len(noCondTrans) > 0 {
 		dispatched := false
@@ -288,17 +282,7 @@ func (e *ProcessExecutor) executeChain(nodeID string, nodeMap map[string]*models
 	}
 
 	// Collect transitions by type
-	var condTrans, noCondTrans, successTrans []models.Transition
-	for _, t := range transitions {
-		switch t.Type {
-		case "condition":
-			condTrans = append(condTrans, t)
-		case "nocondition":
-			noCondTrans = append(noCondTrans, t)
-		case "success":
-			successTrans = append(successTrans, t)
-		}
-	}
+	condTrans, noCondTrans, successTrans, _ := classifyTransitions(transitions)
 
 	if len(condTrans) > 0 || len(noCondTrans) > 0 {
 		for _, t := range condTrans {
@@ -323,6 +307,23 @@ func (e *ProcessExecutor) executeChain(nodeID string, nodeMap map[string]*models
 }
 
 var jsonPathRe = regexp.MustCompile(`\$\.[a-zA-Z0-9_.\[\]]+`)
+
+// classifyTransitions partitions a slice of transitions into buckets by type.
+func classifyTransitions(transitions []models.Transition) (cond, noCond, success, errorT []models.Transition) {
+	for _, t := range transitions {
+		switch t.Type {
+		case "condition":
+			cond = append(cond, t)
+		case "nocondition":
+			noCond = append(noCond, t)
+		case "success":
+			success = append(success, t)
+		case "error":
+			errorT = append(errorT, t)
+		}
+	}
+	return
+}
 
 func evaluateCondition(expr string, ctx *models.ExecutionContext) bool {
 	replaced := jsonPathRe.ReplaceAllStringFunc(expr, func(token string) string {
@@ -427,7 +428,7 @@ func (e *ProcessExecutor) executeNode(node *models.Node, ctx *models.ExecutionCo
 		}
 		if attempt < maxAttempts {
 			log.Printf("Node %s attempt %d/%d failed: %v. Retrying...", node.ID, attempt, maxAttempts, err)
-			time.Sleep(2 * time.Second)
+			time.Sleep(retryBaseInterval)
 		}
 	}
 

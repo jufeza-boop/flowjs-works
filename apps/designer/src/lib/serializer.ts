@@ -3,7 +3,7 @@ import type { FlowDSL, FlowNode, FlowTrigger, FlowTransition, FlowDefinition, Tr
 import type { NodeData } from '../types/designer'
 
 /** Default flow definition metadata */
-const DEFAULT_DEFINITION: FlowDefinition = {
+export const DEFAULT_DEFINITION: FlowDefinition = {
   id: 'new-flow',
   version: '1.0.0',
   name: 'New Flow',

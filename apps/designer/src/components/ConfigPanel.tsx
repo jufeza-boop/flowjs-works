@@ -6,6 +6,8 @@ import type { InputMapping, HttpNodeConfig } from '../types/dsl'
 import type { SecretMeta } from '../types/secrets'
 import { buildSourceFields } from '../lib/mapper'
 import { liveTest, listSecrets } from '../lib/api'
+import { toErrorMessage } from '../lib/errors'
+import { inputClass, selectClass, labelClass } from '../lib/classNames'
 import { DataMapper } from './DataMapper'
 import { MonacoModal } from './MonacoModal'
 
@@ -16,6 +18,19 @@ interface ConfigPanelProps {
 }
 
 const NODES_WITH_SECRET = ['sftp', 's3', 'smb', 'mail', 'rabbitmq', 'sql', 'http']
+
+/**
+ * Resolves the script string from a node's data regardless of whether it is stored
+ * in `data.script` (legacy `script_ts` nodes) or `data.config.script` (`code` nodes).
+ */
+function resolveScript(data: DesignerNode['data']): string {
+  if (data.nodeKind !== 'process') return ''
+  if ((data.type as string) === 'script_ts') return (data.script as string) ?? ''
+  if ((data.type as string) === 'code') {
+    return ((data.config as Record<string, unknown>)?.script as string) ?? ''
+  }
+  return ''
+}
 
 /** Right panel showing configuration for the selected node */
 export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: ConfigPanelProps) {
@@ -179,11 +194,9 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
     setLiveTestError(null)
     try {
       const parsedInput = JSON.parse(liveTestInput) as Record<string, unknown>
-      const script = (data.type as string) === 'script_ts'
-        ? (data.script as string || '')
-        : (data.type as string) === 'code'
-          ? ((data.config as unknown as Record<string, unknown>)?.script as string || '')
-          : undefined
+      const script = (data.type as string) === 'script_ts' || (data.type as string) === 'code'
+        ? resolveScript(data) || undefined
+        : undefined
       const result = await liveTest({
         input_mapping: data.input_mapping || {},
         script,
@@ -193,7 +206,7 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
       })
       setLiveTestResult(JSON.stringify(result.output, null, 2))
     } catch (err) {
-      setLiveTestError(err instanceof Error ? err.message : String(err))
+      setLiveTestError(toErrorMessage(err))
     } finally {
       setLiveTestLoading(false)
     }
@@ -207,15 +220,7 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
     : {}
 
   const needsSecretRef = data.nodeKind === 'process' && NODES_WITH_SECRET.includes(data.type as string)
-  const currentScript = data.nodeKind === 'process' && (data.type as string) === 'script_ts'
-    ? (data.script as string || '')
-    : data.nodeKind === 'process' && (data.type as string) === 'code'
-      ? ((data.config as unknown as Record<string, unknown>)?.script as string || '')
-      : ''
-
-  const inputClass = "w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
-  const selectClass = "w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
-  const labelClass = "block text-xs font-medium text-gray-600 mb-1"
+  const currentScript = resolveScript(data)
 
   return (
     <>

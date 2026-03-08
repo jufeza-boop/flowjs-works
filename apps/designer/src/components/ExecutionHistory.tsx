@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { Execution, ActivityLog } from '../types/audit'
 import { fetchExecutions, fetchActivityLogs, fetchTriggerData, replayExecution, replayFromNode } from '../lib/api'
+import { toErrorMessage } from '../lib/errors'
 
 const LIMIT = 20
 
@@ -121,7 +122,7 @@ function LogDetailPanel({ executionId, flowId, onClose }: LogDetailPanelProps) {
         setLogs(data)
         setSelectedLog(data[0] ?? null)
       })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .catch((e: unknown) => setError(toErrorMessage(e)))
       .finally(() => setLoading(false))
   }, [executionId])
 
@@ -271,7 +272,7 @@ export function ExecutionHistory() {
       offset: currentOffset,
     })
       .then(setExecutions)
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .catch((e: unknown) => setError(toErrorMessage(e)))
       .finally(() => setLoading(false))
   }, [])
 
@@ -300,14 +301,14 @@ export function ExecutionHistory() {
     try {
       triggerData = await fetchTriggerData(exec.execution_id)
     } catch (err) {
-      setReplayMessage({ type: 'error', text: `Failed to fetch trigger data: ${err instanceof Error ? err.message : String(err)}` })
+      setReplayMessage({ type: 'error', text: `Failed to fetch trigger data: ${toErrorMessage(err)}` })
       return
     }
     try {
       await replayExecution(exec.flow_id, triggerData)
       setReplayMessage({ type: 'success', text: `Replay started for ${exec.execution_id}` })
     } catch (err) {
-      setReplayMessage({ type: 'error', text: `Replay execution failed: ${err instanceof Error ? err.message : String(err)}` })
+      setReplayMessage({ type: 'error', text: `Replay execution failed: ${toErrorMessage(err)}` })
     }
   }
 

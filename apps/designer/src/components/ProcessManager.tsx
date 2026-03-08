@@ -13,6 +13,7 @@ import { serializeGraph } from '../lib/serializer'
 import type { Node, Edge } from '@xyflow/react'
 import type { NodeData } from '../types/designer'
 import type { FlowDefinition } from '../types/dsl'
+import { toErrorMessage } from '../lib/errors'
 
 const STATUS_BADGE: Record<ProcessStatus, string> = {
   draft: 'bg-gray-100 text-gray-600',
@@ -60,7 +61,7 @@ export function ProcessManager({ nodes, edges, definition, onEditProcess }: Prop
       const data = await listProcesses()
       setProcesses(data ?? [])
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(toErrorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -80,7 +81,7 @@ export function ProcessManager({ nodes, edges, definition, onEditProcess }: Prop
       await saveProcess(dsl)
       await reload()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err))
+      setActionError(toErrorMessage(err))
     } finally {
       setSaving(false)
     }
@@ -96,7 +97,7 @@ export function ProcessManager({ nodes, edges, definition, onEditProcess }: Prop
         await deployProcess(id)
         await reload()
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : String(err))
+        setActionError(toErrorMessage(err))
       } finally {
         setBusyId(null)
       }
@@ -114,7 +115,7 @@ export function ProcessManager({ nodes, edges, definition, onEditProcess }: Prop
         await stopProcess(id)
         await reload()
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : String(err))
+        setActionError(toErrorMessage(err))
       } finally {
         setBusyId(null)
       }
@@ -173,7 +174,7 @@ export function ProcessManager({ nodes, edges, definition, onEditProcess }: Prop
         await deleteProcess(id)
         await reload()
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : String(err))
+        setActionError(toErrorMessage(err))
       } finally {
         setBusyId(null)
       }

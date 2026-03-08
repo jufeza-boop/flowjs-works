@@ -52,7 +52,7 @@ function FieldNode({ field, depth, onSelect, isSelected }: FieldNodeProps) {
           field={child}
           depth={depth + 1}
           onSelect={onSelect}
-          isSelected={isSelected && false /* parent selected, not child */}
+          isSelected={false /* only the root node can be selected, not children */}
         />
       ))}
     </div>

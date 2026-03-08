@@ -91,17 +91,8 @@ func mailSend(config map[string]interface{}) (map[string]interface{}, error) {
 	var fromUser, fromPass string
 	// Credentials are read from config["auth"] (nested map) when present, or from
 	// flat top-level keys (user, password) injected by the secret resolver.
-	getCredential := func(key string) string {
-		if authMap, ok := config["auth"].(map[string]interface{}); ok {
-			if v, ok := authMap[key].(string); ok {
-				return v
-			}
-		}
-		v, _ := config[key].(string)
-		return v
-	}
-	fromUser = getCredential("user")
-	fromPass = getCredential("password")
+	fromUser = getCredential(config, "user")
+	fromPass = getCredential(config, "password")
 
 	addr := fmt.Sprintf("%s:%d", host, port)
 	headers := fmt.Sprintf("From: %s\r\nTo: %s\r\nCc: %s\r\nSubject: %s\r\nContent-Type: %s\r\n\r\n%s",
