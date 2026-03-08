@@ -45,7 +45,7 @@ const (
 func CORS(origins []string) func(http.Handler) http.Handler {
 	allowed := make(map[string]bool, len(origins))
 	for _, o := range origins {
-		allowed[strings.TrimRight(o, "/")] = true
+		allowed[strings.TrimSuffix(o, "/")] = true
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

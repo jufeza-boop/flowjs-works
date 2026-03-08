@@ -48,7 +48,7 @@ const (
 func CORS(origins []string) func(http.Handler) http.Handler {
 	allowed := make(map[string]bool, len(origins))
 	for _, o := range origins {
-		allowed[strings.TrimRight(o, "/")] = true
+		allowed[strings.TrimSuffix(o, "/")] = true
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -248,10 +248,8 @@ func SecurityLog(event, ip, method, path string, status int) {
 func RequestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		start := time.Now()
 		next.ServeHTTP(rw, r)
 		SecurityLog("HTTP_REQUEST", clientIP(r), r.Method, r.URL.Path, rw.statusCode)
-		_ = start // duration available if needed in future
 	})
 }
 
