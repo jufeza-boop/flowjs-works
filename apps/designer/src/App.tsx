@@ -108,7 +108,7 @@ export default function App() {
     } finally {
       setRunLoading(false)
     }
-  }, [nodes, edges])
+  }, [nodes, edges, definition])
 
   const handleCloseDebug = useCallback(() => {
     setRunFlowResult(null)

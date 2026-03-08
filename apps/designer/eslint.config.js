@@ -23,6 +23,15 @@ export default tseslint.config(
         'warn',
         { allowConstantExport: true },
       ],
+      // Allow _-prefixed variables to be declared but unused (explicit ignore convention)
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          varsIgnorePattern: '^_',
+          argsIgnorePattern: '^_',
+          destructuredArrayIgnorePattern: '^_',
+        },
+      ],
     },
   },
 )

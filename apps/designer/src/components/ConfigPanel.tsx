@@ -65,6 +65,9 @@ export function ConfigPanel({ selectedNode, onNodeUpdate, allNodes = [] }: Confi
     } else {
       setHeaderRows([])
     }
+    // Intentionally limited to selectedNode.id: we only want to re-sync header rows
+    // when switching to a different node, not on every intermediate config edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedNode?.id])
 
   const updateNodeDataCentralized = useCallback((updates: Partial<DesignerNode['data']>) => {
