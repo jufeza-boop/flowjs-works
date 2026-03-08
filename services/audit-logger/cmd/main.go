@@ -21,6 +21,7 @@ import (
 
 	"flowjs-works/audit-logger/internal/batcher"
 	"flowjs-works/audit-logger/internal/db"
+	"flowjs-works/audit-logger/internal/middleware"
 	"flowjs-works/audit-logger/internal/subscriber"
 )
 
@@ -81,9 +82,24 @@ func main() {
 	mux := http.NewServeMux()
 	registerRoutes(mux, rawDB)
 
+	// Security middleware chain (OWASP hardening — ADR 0002):
+	//   RequestLogger  → A09 audit trail
+	//   RateLimiter    → A04 brute-force / DoS protection
+	//   CORS           → A05 restrictive origin policy
+	//   SecurityHeaders → A02/A05 HSTS + defensive headers
+	rateLimiter := middleware.NewRateLimiter()
+	defer rateLimiter.Stop()
+	allowedOrigins := middleware.AllowedOrigins()
+
+	var handler http.Handler = mux
+	handler = middleware.CORS(allowedOrigins)(handler)
+	handler = rateLimiter.Middleware(handler)
+	handler = middleware.SecurityHeaders(handler)
+	handler = middleware.RequestLogger(handler)
+
 	server := &http.Server{
 		Addr:         httpAddr,
-		Handler:      corsMiddleware(mux),
+		Handler:      handler,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
@@ -122,7 +138,8 @@ func healthHandler(rawDB *sql.DB) http.HandlerFunc {
 			return
 		}
 		if err := rawDB.Ping(); err != nil {
-			jsonError(w, "database unreachable: "+err.Error(), http.StatusServiceUnavailable)
+			log.Printf("audit-logger: health check db ping: %v", err)
+			jsonError(w, middleware.SanitizeError(err, "database unreachable"), http.StatusServiceUnavailable)
 			return
 		}
 		jsonOK(w, map[string]string{"status": "ok", "service": "audit-logger"})
@@ -192,7 +209,8 @@ func listExecutionsHandler(rawDB *sql.DB) http.HandlerFunc {
 		var total int
 		countQuery := fmt.Sprintf("SELECT COUNT(*) FROM executions e %s", whereSQL)
 		if err := rawDB.QueryRowContext(r.Context(), countQuery, args...).Scan(&total); err != nil {
-			jsonError(w, "count executions: "+err.Error(), http.StatusInternalServerError)
+			log.Printf("audit-logger: count executions: %v", err)
+			jsonError(w, middleware.SanitizeError(err, "failed to count executions"), http.StatusInternalServerError)
 			return
 		}
 
@@ -211,7 +229,8 @@ func listExecutionsHandler(rawDB *sql.DB) http.HandlerFunc {
 
 		rows, err := rawDB.QueryContext(r.Context(), dataQuery, paginatedArgs...)
 		if err != nil {
-			jsonError(w, "query executions: "+err.Error(), http.StatusInternalServerError)
+			log.Printf("audit-logger: query executions: %v", err)
+			jsonError(w, middleware.SanitizeError(err, "failed to query executions"), http.StatusInternalServerError)
 			return
 		}
 		defer func() {
@@ -238,7 +257,8 @@ func listExecutionsHandler(rawDB *sql.DB) http.HandlerFunc {
 				&exec.ExecutionID, &exec.FlowID, &exec.Version, &exec.Status,
 				&exec.CorrelationID, &startTime, &exec.TriggerType, &exec.MainErrorMessage,
 			); err != nil {
-				jsonError(w, "scan execution: "+err.Error(), http.StatusInternalServerError)
+				log.Printf("audit-logger: scan execution row: %v", err)
+				jsonError(w, middleware.SanitizeError(err, "failed to read execution data"), http.StatusInternalServerError)
 				return
 			}
 			exec.StartTime = startTime.Format(time.RFC3339)
@@ -296,7 +316,8 @@ func serveExecutionLogs(w http.ResponseWriter, r *http.Request, rawDB *sql.DB, e
 		WHERE execution_id = $1
 		ORDER BY created_at ASC`, executionID)
 	if err != nil {
-		jsonError(w, "query activity_logs: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("audit-logger: query activity_logs for %q: %v", executionID, err)
+		jsonError(w, middleware.SanitizeError(err, "failed to query activity logs"), http.StatusInternalServerError)
 		return
 	}
 	defer func() {
@@ -325,7 +346,8 @@ func serveExecutionLogs(w http.ResponseWriter, r *http.Request, rawDB *sql.DB, e
 			&lr.LogID, &lr.NodeID, &lr.NodeType, &lr.Status,
 			&inputRaw, &outputRaw, &errorRaw, &lr.DurationMs, &createdAt,
 		); err != nil {
-			jsonError(w, "scan log: "+err.Error(), http.StatusInternalServerError)
+			log.Printf("audit-logger: scan activity_log row: %v", err)
+			jsonError(w, middleware.SanitizeError(err, "failed to read log data"), http.StatusInternalServerError)
 			return
 		}
 		lr.CreatedAt = createdAt.Format(time.RFC3339)
@@ -356,7 +378,8 @@ func serveExecutionTriggerData(w http.ResponseWriter, r *http.Request, rawDB *sq
 		return
 	}
 	if err != nil {
-		jsonError(w, "query trigger data: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("audit-logger: query trigger data for %q: %v", executionID, err)
+		jsonError(w, middleware.SanitizeError(err, "failed to query trigger data"), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -372,20 +395,6 @@ func serveExecutionTriggerData(w http.ResponseWriter, r *http.Request, rawDB *sq
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-// corsMiddleware adds CORS headers so the designer frontend (different origin) can call the API.
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
 
 func jsonOK(w http.ResponseWriter, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")

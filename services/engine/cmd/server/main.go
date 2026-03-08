@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -12,11 +13,14 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"flowjs-works/engine/internal/engine"
+	"flowjs-works/engine/internal/middleware"
 	"flowjs-works/engine/internal/models"
 	"flowjs-works/engine/internal/secrets"
 	procstore "flowjs-works/engine/internal/store"
@@ -92,19 +96,47 @@ func main() {
 		}
 	}
 
+	// Security middleware chain (OWASP hardening — ADR 0002):
+	//   RequestLogger  → A09 audit trail
+	//   RateLimiter    → A04 brute-force / DoS protection
+	//   CORS           → A05 restrictive origin policy
+	//   SecurityHeaders → A02/A05 HSTS + defensive headers
+	rateLimiter := middleware.NewRateLimiter()
+	allowedOrigins := middleware.AllowedOrigins()
+
 	mux := http.NewServeMux()
 	registerRoutes(mux, executor, secretStore, processStore, triggerMgr)
 
+	var handler http.Handler = mux
+	handler = middleware.CORS(allowedOrigins)(handler)
+	handler = rateLimiter.Middleware(handler)
+	handler = middleware.SecurityHeaders(handler)
+	handler = middleware.RequestLogger(handler)
+
 	server := &http.Server{
 		Addr:         httpAddr,
-		Handler:      corsMiddleware(mux),
+		Handler:      handler,
 		ReadTimeout:  requestTimeout,
 		WriteTimeout: requestTimeout,
 	}
 
-	log.Printf("engine-server: HTTP API listening on %s", httpAddr)
-	if err := server.ListenAndServe(); err != nil {
-		log.Fatalf("engine-server: %v", err)
+	go func() {
+		log.Printf("engine-server: HTTP API listening on %s", httpAddr)
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("engine-server: %v", err)
+		}
+	}()
+
+	// Wait for shutdown signal and perform graceful cleanup.
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	<-sig
+	log.Println("engine-server: shutting down")
+	rateLimiter.Stop()
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("engine-server: shutdown error: %v", err)
 	}
 }
 
@@ -238,7 +270,8 @@ func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor, store 
 		case http.MethodGet:
 			list, err := store.List(r.Context())
 			if err != nil {
-				jsonError(w, err.Error(), http.StatusInternalServerError)
+				log.Printf("engine-server: list secrets: %v", err)
+				jsonError(w, middleware.SanitizeError(err, "failed to list secrets"), http.StatusInternalServerError)
 				return
 			}
 			if list == nil {
@@ -281,7 +314,8 @@ func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor, store 
 			return
 		}
 		if err := store.Delete(r.Context(), secretID); err != nil {
-			jsonError(w, err.Error(), http.StatusInternalServerError)
+			log.Printf("engine-server: delete secret %q: %v", secretID, err)
+			jsonError(w, middleware.SanitizeError(err, "failed to delete secret"), http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -301,7 +335,8 @@ func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor, store 
 			statusFilter := r.URL.Query().Get("status")
 			list, err := procStore.List(r.Context(), statusFilter)
 			if err != nil {
-				jsonError(w, err.Error(), http.StatusInternalServerError)
+				log.Printf("engine-server: list processes: %v", err)
+				jsonError(w, middleware.SanitizeError(err, "failed to list processes"), http.StatusInternalServerError)
 				return
 			}
 			if list == nil {
@@ -321,7 +356,8 @@ func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor, store 
 			}
 			rec, err := procStore.Upsert(r.Context(), &proc)
 			if err != nil {
-				jsonError(w, err.Error(), http.StatusInternalServerError)
+				log.Printf("engine-server: upsert process: %v", err)
+				jsonError(w, middleware.SanitizeError(err, "failed to save process"), http.StatusInternalServerError)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -391,7 +427,8 @@ func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor, store 
 				_ = triggerMgr.Stop(processID)
 			}
 			if err := procStore.Delete(r.Context(), processID); err != nil {
-				jsonError(w, err.Error(), http.StatusInternalServerError)
+				log.Printf("engine-server: delete process %q: %v", processID, err)
+				jsonError(w, middleware.SanitizeError(err, "failed to delete process"), http.StatusInternalServerError)
 				return
 			}
 			w.WriteHeader(http.StatusNoContent)
@@ -545,19 +582,6 @@ func handleReplayFrom(w http.ResponseWriter, r *http.Request, processID, nodeID 
 
 	ctx, execErr := executor.ExecuteFromNode(proc, nodeID, req.NodeInput, "")
 	writeFlowResponse(w, ctx, execErr)
-}
-
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }
 
 func jsonOK(w http.ResponseWriter, v interface{}) {
