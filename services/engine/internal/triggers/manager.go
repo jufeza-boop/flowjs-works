@@ -150,5 +150,5 @@ func (m *Manager) newHandler(proc *models.Process) (TriggerHandler, error) {
 type manualTrigger struct{}
 
 func (t *manualTrigger) Start(_ context.Context, _ *models.Process) error { return nil }
-func (t *manualTrigger) Stop() error                                       { return nil }
-func (t *manualTrigger) Type() string                                      { return "manual" }
+func (t *manualTrigger) Stop() error                                      { return nil }
+func (t *manualTrigger) Type() string                                     { return "manual" }

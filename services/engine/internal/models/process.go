@@ -28,7 +28,7 @@ type Definition struct {
 
 // ProcessSettings defines execution behavior
 type ProcessSettings struct {
-	Persistence   string `json:"persistence"`    // full | minimal | none
+	Persistence   string `json:"persistence"` // full | minimal | none
 	Timeout       int    `json:"timeout"`
 	ErrorStrategy string `json:"error_strategy"` // stop_and_rollback | continue | retry
 }
@@ -73,7 +73,7 @@ type RetryPolicy struct {
 type Transition struct {
 	From      string `json:"from"`
 	To        string `json:"to"`
-	Type      string `json:"type"`                // success | error | condition | nocondition
+	Type      string `json:"type"` // success | error | condition | nocondition
 	Condition string `json:"condition,omitempty"`
 }
 

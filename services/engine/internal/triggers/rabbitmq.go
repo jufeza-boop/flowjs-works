@@ -14,6 +14,7 @@ import (
 // consumerDrainTimeout is the time Stop() waits for in-flight deliveries to
 // complete before closing the AMQP connection.
 const consumerDrainTimeout = 100 * time.Millisecond
+
 // message received. Each delivery is ACKed on successful execution.
 type rabbitMQTrigger struct {
 	executor  Executor

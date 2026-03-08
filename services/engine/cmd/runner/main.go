@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
-	
+
 	"flowjs-works/engine/internal/engine"
 )
 
@@ -16,11 +16,11 @@ func main() {
 	triggerFile := flag.String("trigger", "", "Path to the trigger data JSON file (optional)")
 	natsURL := flag.String("nats", "nats://localhost:4222", "NATS server URL for audit logging")
 	flag.Parse()
-	
+
 	// Use example data if no process file specified
 	var processJSON []byte
 	var err error
-	
+
 	if *processFile == "" {
 		log.Println("No process file specified, using embedded example")
 		processJSON = []byte(exampleProcess)
@@ -30,7 +30,7 @@ func main() {
 			log.Fatalf("Failed to read process file: %v", err)
 		}
 	}
-	
+
 	// Load trigger data
 	triggerData := make(map[string]interface{})
 	if *triggerFile != "" {
@@ -54,20 +54,20 @@ func main() {
 			},
 		}
 	}
-	
+
 	// Create executor
 	executor, err := engine.NewProcessExecutor(*natsURL)
 	if err != nil {
 		log.Fatalf("Failed to create executor: %v", err)
 	}
 	defer executor.Close()
-	
+
 	// Execute the process
 	ctx, err := executor.ExecuteFromJSON(processJSON, triggerData)
 	if err != nil {
 		log.Fatalf("Process execution failed: %v", err)
 	}
-	
+
 	// Print the final context
 	fmt.Println("\n========== EXECUTION RESULT ==========")
 	contextJSON, err := ctx.ToJSON()
