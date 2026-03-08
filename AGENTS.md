@@ -50,3 +50,22 @@ Para que una tarea se considere completada, el agente debe verificar:
 Al implementar nodos, recuerda que el sistema debe permitir el "Replay".
 - Las actividades deben ser, en la medida de lo posible, idempotentes.
 - El estado (`input_data` y `output_data`) debe ser serializable a JSON para guardarse en la `Audit DB`.
+
+## 8. Estándares Derivados de Refactorización (ADR 0001)
+Reglas obligatorias derivadas del análisis de *code smells*. Ver `docs/adr/0001-estandares-refactorizacion-agentes.md` para contexto completo.
+
+### Go — `services/engine`
+1. **No duplicar `getCredential`:** Usar siempre `getCredential(config, key)` del paquete `internal/activities/credentials.go`. Nunca copiar la closure en actividades individuales.
+2. **No crear `http.Client` por request:** Usar `NewHTTPActivity()` o un campo `client *http.Client` compartido en la struct. No instanciar `http.Client` dentro de `Execute()`.
+3. **Usar constantes para timeouts y durations:** No usar literales numéricos (`30*time.Second`, `5000`, etc.). Usar las constantes nombradas del paquete (`defaultHTTPTimeout`, `defaultScriptTimeoutMs`, `retryBaseInterval`).
+4. **Aplicar `gofmt`:** Todo código Go generado debe estar correctamente formateado. El CI rechaza archivos sin formato canónico de tabs.
+5. **Verificar `APP_ENV` para claves de seguridad:** Cuando `APP_ENV != "development"`, fallar en arranque (`log.Fatalf`) si falta una clave de seguridad o tiene menos de 32 bytes. Solo en `development` se permite fallback con advertencia explícita.
+
+### TypeScript/React — `apps/designer/src`
+6. **Usar `toErrorMessage` siempre:** No repetir `err instanceof Error ? err.message : String(err)`. Importar y usar `toErrorMessage(err)` de `lib/errors.ts`.
+7. **Importar `DEFAULT_DEFINITION` desde `lib/serializer.ts`:** No redefinir la constante en otros archivos (ej. `App.tsx`).
+8. **No variables de módulo mutables en React:** Usar `useRef` dentro del componente en lugar de `let counter` a nivel de módulo para contadores o estado mutable por instancia.
+9. **Importar CSS class strings de `lib/classNames.ts`:** No duplicar strings de clases Tailwind (`inputClass`, `selectClass`, `labelClass`) en componentes individuales.
+
+### General
+10. **Extraer helpers para lógica duplicada:** Si la misma lógica aparece en más de dos lugares, extraer a función reutilizable antes de añadir una tercera copia.
