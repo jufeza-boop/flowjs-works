@@ -1,0 +1,98 @@
+# CI Lint Gate — flowjs-works
+# ADR 0001: gofmt + golangci-lint + eslint --max-warnings 0
+# Prevents accumulation of code smells in services/engine,
+# services/audit-logger, and apps/designer.
+
+name: Lint Gate
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # ──────────────────────────────────────────────────────────────
+  # Go: gofmt check + golangci-lint
+  # Runs for each Go service independently via matrix strategy.
+  # ──────────────────────────────────────────────────────────────
+  lint-go:
+    name: "Go lint (${{ matrix.service }})"
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - services/engine
+          - services/audit-logger
+
+    defaults:
+      run:
+        working-directory: ${{ matrix.service }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          # Picks the Go version declared in each service's go.mod
+          go-version-file: ${{ matrix.service }}/go.mod
+          cache-dependency-path: ${{ matrix.service }}/go.sum
+
+      # ADR 0001 §2 — Canonical tab formatting is mandatory.
+      # gofmt -l prints every file that is NOT formatted; we fail if any output.
+      - name: Check gofmt formatting
+        run: |
+          UNFORMATTED=$(gofmt -l .)
+          if [ -n "$UNFORMATTED" ]; then
+            echo "❌ The following files are not gofmt-formatted:"
+            echo "$UNFORMATTED"
+            echo ""
+            echo "Run:  gofmt -w ."
+            exit 1
+          fi
+          echo "✅ All Go files are properly formatted."
+
+      # golangci-lint covers: unconvert, gocyclo ≤10, errcheck, dupl, staticcheck…
+      # Config lives at repo root: .golangci.yml
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64.x
+          working-directory: ${{ matrix.service }}
+          # Point to the shared config at repo root
+          args: --config ../../.golangci.yml
+
+  # ──────────────────────────────────────────────────────────────
+  # Frontend: ESLint with zero-warning policy
+  # ADR 0001 §9-§15 — all TypeScript/React smells must be caught.
+  # ──────────────────────────────────────────────────────────────
+  lint-frontend:
+    name: "Frontend ESLint (apps/designer)"
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: apps/designer
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/designer/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # --max-warnings 0: any ESLint warning is treated as an error.
+      # This enforces the zero-tolerance policy from ADR 0001.
+      - name: ESLint — zero warnings policy
+        run: npm run lint -- --max-warnings 0
