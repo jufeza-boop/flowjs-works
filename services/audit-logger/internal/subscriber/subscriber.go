@@ -10,6 +10,7 @@ import (
 	"github.com/nats-io/nats.go"
 
 	"flowjs-works/audit-logger/internal/batcher"
+	"flowjs-works/audit-logger/internal/metrics"
 )
 
 const auditSubject = "audit.logs"
@@ -89,5 +90,6 @@ func (s *Subscriber) handleMessage(msg *nats.Msg) {
 		log.Printf("audit-logger: failed to parse audit event: %v — payload: %s", err, string(msg.Data))
 		return
 	}
+	metrics.EventsReceived.Add(1)
 	s.batcher.Add(event)
 }

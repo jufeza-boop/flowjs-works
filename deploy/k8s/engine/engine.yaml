@@ -1,0 +1,116 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: engine-config
+  namespace: flowjs
+  labels:
+    app: engine
+data:
+  APP_ENV: "production"
+  NATS_URL: "nats://nats:4222"
+  HTTP_ADDR: ":9090"
+  DATABASE_URL: "postgres://admin:flowjs_pass@postgres:5432/flowjs_config?sslmode=disable"
+  ALLOWED_ORIGINS: "http://designer"
+---
+# Engine Secret — SECRETS_AES_KEY must be a random 32-byte value in production.
+# Generate with: head -c 32 /dev/urandom | base64
+apiVersion: v1
+kind: Secret
+metadata:
+  name: engine-secret
+  namespace: flowjs
+  labels:
+    app: engine
+type: Opaque
+stringData:
+  # Replace with a securely-generated 32-byte key before deploying to production.
+  SECRETS_AES_KEY: "CHANGE_ME_use_32_bytes_random_key"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: engine
+  namespace: flowjs
+  labels:
+    app: engine
+    app.kubernetes.io/part-of: flowjs-works
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: engine
+  # Rolling update strategy enables hot-reload without dropping requests.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: engine
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "9090"
+    spec:
+      # Graceful shutdown: allow in-flight executions to complete.
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: engine
+          image: flowjs-engine:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9090
+              name: http
+          envFrom:
+            - configMapRef:
+                name: engine-config
+          env:
+            - name: SECRETS_AES_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: engine-secret
+                  key: SECRETS_AES_KEY
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 9090
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          lifecycle:
+            # Delay removal from service endpoints to allow load-balancer to drain connections.
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: engine
+  namespace: flowjs
+  labels:
+    app: engine
+spec:
+  selector:
+    app: engine
+  ports:
+    - port: 9090
+      targetPort: 9090
+      name: http
