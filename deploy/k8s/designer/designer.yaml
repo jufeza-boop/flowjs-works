@@ -1,0 +1,79 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: designer-config
+  namespace: flowjs
+  labels:
+    app: designer
+data:
+  # nginx serves the pre-built React SPA; env vars are baked in at build time.
+  # Use VITE_AUDIT_API_URL and VITE_ENGINE_API_URL in docker build args to
+  # point the UI at the right backend URLs for each environment.
+  NGINX_WORKER_PROCESSES: "auto"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: designer
+  namespace: flowjs
+  labels:
+    app: designer
+    app.kubernetes.io/part-of: flowjs-works
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: designer
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: designer
+    spec:
+      containers:
+        - name: designer
+          image: flowjs-designer:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+              name: http
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "20m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: designer
+  namespace: flowjs
+  labels:
+    app: designer
+spec:
+  selector:
+    app: designer
+  ports:
+    - port: 80
+      targetPort: 80
+      name: http
+  type: ClusterIP

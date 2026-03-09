@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"flowjs-works/engine/internal/engine"
+	"flowjs-works/engine/internal/metrics"
 	"flowjs-works/engine/internal/middleware"
 	"flowjs-works/engine/internal/models"
 	"flowjs-works/engine/internal/secrets"
@@ -120,6 +121,9 @@ func main() {
 		WriteTimeout: requestTimeout,
 	}
 
+	// Mark the service as ready to serve traffic once all resources are wired.
+	metrics.Ready.Store(1)
+
 	go func() {
 		log.Printf("engine-server: HTTP API listening on %s", httpAddr)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -154,6 +158,31 @@ func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor, store 
 		jsonOK(w, map[string]string{"status": "ok", "service": "engine"})
 	})
 
+	// GET /ready — readiness probe (returns 503 until service is fully initialised)
+	mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if metrics.Ready.Load() == 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "service": "engine"})
+			return
+		}
+		jsonOK(w, map[string]string{"status": "ready", "service": "engine"})
+	})
+
+	// GET /metrics — Prometheus text-format metrics exposition
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		metrics.WritePrometheus(w)
+	})
+
 	// POST /v1/flow — execute a complete DSL flow
 	mux.HandleFunc("/v1/flow", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -174,7 +203,14 @@ func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor, store 
 			req.TriggerData = map[string]interface{}{}
 		}
 
+		metrics.HTTPRequestsTotal.Add(1)
 		ctx, execErr := executor.Execute(&req.DSL, req.TriggerData)
+		if execErr != nil {
+			metrics.ExecutionsError.Add(1)
+		} else {
+			metrics.ExecutionsSuccess.Add(1)
+		}
+		metrics.ExecutionsTotal.Add(1)
 		writeFlowResponse(w, ctx, execErr)
 	})
 
@@ -396,6 +432,8 @@ func registerRoutes(mux *http.ServeMux, executor *engine.ProcessExecutor, store 
 				handleDeploy(w, r, processID, procStore, triggerMgr, executor)
 			case "stop":
 				handleStop(w, r, processID, procStore, triggerMgr, executor)
+			case "reload":
+				handleReload(w, r, processID, procStore, triggerMgr, executor)
 			case "replay":
 				handleReplay(w, r, processID, procStore, executor)
 			case "replay-from":
@@ -499,6 +537,40 @@ func handleStop(w http.ResponseWriter, r *http.Request, processID string, procSt
 	jsonOK(w, map[string]string{
 		"process_id": processID,
 		"status":     "stopped",
+	})
+}
+
+// handleReload performs a zero-downtime hot-reload of a deployed process:
+// it re-reads the latest DSL from the process store and re-deploys the trigger
+// without changing the status or losing any in-flight messages. This maps to
+// a rolling update in Kubernetes where a new DSL version replaces the old one.
+func handleReload(w http.ResponseWriter, r *http.Request, processID string, procStore *procstore.ProcessStore, triggerMgr *triggers.Manager, executor *engine.ProcessExecutor) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	rec, err := procStore.Get(r.Context(), processID)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	proc, err := rec.ParseDSL()
+	if err != nil {
+		jsonError(w, fmt.Sprintf("parse DSL: %v", err), http.StatusInternalServerError)
+		return
+	}
+	// Deploy() atomically stops the old handler and starts a fresh one using the
+	// latest DSL — the trigger manager already implements hot-reload semantics.
+	if err := triggerMgr.Deploy(proc); err != nil {
+		executor.SendLifecycleAuditLog(processID, proc.Trigger.Type, "reload_failed", err.Error())
+		jsonError(w, fmt.Sprintf("reload trigger: %v", err), http.StatusBadRequest)
+		return
+	}
+	executor.SendLifecycleAuditLog(processID, proc.Trigger.Type, "reloaded", "")
+	jsonOK(w, map[string]string{
+		"process_id": processID,
+		"status":     "deployed",
+		"message":    fmt.Sprintf("%s trigger reloaded with latest DSL", proc.Trigger.Type),
 	})
 }
 

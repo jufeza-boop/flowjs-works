@@ -21,6 +21,7 @@ import (
 
 	"flowjs-works/audit-logger/internal/batcher"
 	"flowjs-works/audit-logger/internal/db"
+	"flowjs-works/audit-logger/internal/metrics"
 	"flowjs-works/audit-logger/internal/middleware"
 	"flowjs-works/audit-logger/internal/subscriber"
 )
@@ -41,8 +42,11 @@ func main() {
 	b := batcher.New(batcher.DefaultMaxBatchSize, batcher.DefaultFlushInterval, func(events []batcher.AuditEvent) error {
 		if err := dbClient.BatchInsertLogs(events); err != nil {
 			log.Printf("audit-logger: batch insert failed: %v", err)
+			metrics.BatchFlushErrors.Add(1)
 			return err
 		}
+		metrics.EventsPersisted.Add(int64(len(events)))
+		metrics.BatchesFlushed.Add(1)
 		log.Printf("audit-logger: persisted batch of %d events", len(events))
 		return nil
 	})
@@ -81,6 +85,9 @@ func main() {
 
 	mux := http.NewServeMux()
 	registerRoutes(mux, rawDB)
+
+	// Mark the service ready to serve traffic once all resources are wired.
+	metrics.Ready.Store(1)
 
 	// Security middleware chain (OWASP hardening — ADR 0002):
 	//   RequestLogger  → A09 audit trail
@@ -126,6 +133,8 @@ func main() {
 // into its own function to keep cyclomatic complexity below the project limit.
 func registerRoutes(mux *http.ServeMux, rawDB *sql.DB) {
 	mux.HandleFunc("/health", healthHandler(rawDB))
+	mux.HandleFunc("/ready", readyHandler())
+	mux.HandleFunc("/metrics", metricsHandler())
 	mux.HandleFunc("/executions", listExecutionsHandler(rawDB))
 	mux.HandleFunc("/executions/", executionDetailHandler(rawDB))
 }
@@ -143,6 +152,36 @@ func healthHandler(rawDB *sql.DB) http.HandlerFunc {
 			return
 		}
 		jsonOK(w, map[string]string{"status": "ok", "service": "audit-logger"})
+	}
+}
+
+// readyHandler returns a readiness-probe handler that reports 503 until all
+// resources have been wired and metrics.Ready is set to 1.
+func readyHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if metrics.Ready.Load() == 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "service": "audit-logger"})
+			return
+		}
+		jsonOK(w, map[string]string{"status": "ready", "service": "audit-logger"})
+	}
+}
+
+// metricsHandler exposes Prometheus text-format metrics for scraping.
+func metricsHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		metrics.WritePrometheus(w)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"flowjs-works/engine/internal/activities"
+	"flowjs-works/engine/internal/metrics"
 	"flowjs-works/engine/internal/models"
 	"flowjs-works/engine/internal/secrets"
 
@@ -488,7 +489,10 @@ func (e *ProcessExecutor) sendAuditLog(executionID, flowID, nodeID, nodeType, st
 
 	if err := e.natsConn.Publish("audit.logs", msgBytes); err != nil {
 		log.Printf("Failed to publish audit log: %v", err)
+		metrics.NATSPublishErrors.Add(1)
+		return
 	}
+	metrics.NATSPublishTotal.Add(1)
 }
 
 // SendLifecycleAuditLog emits a NATS audit event for deployment lifecycle

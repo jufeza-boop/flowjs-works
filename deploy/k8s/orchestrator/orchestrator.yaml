@@ -1,0 +1,126 @@
+---
+# RBAC: ServiceAccount + ClusterRole + ClusterRoleBinding so the orchestrator
+# can manage Deployments in the flowjs namespace.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: flowjs-orchestrator
+  namespace: flowjs
+  labels:
+    app: orchestrator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: flowjs-orchestrator
+  namespace: flowjs
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: flowjs-orchestrator
+  namespace: flowjs
+subjects:
+  - kind: ServiceAccount
+    name: flowjs-orchestrator
+    namespace: flowjs
+roleRef:
+  kind: Role
+  apiGroup: rbac.authorization.k8s.io
+  name: flowjs-orchestrator
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orchestrator-config
+  namespace: flowjs
+  labels:
+    app: orchestrator
+data:
+  NATS_URL: "nats://nats:4222"
+  HTTP_ADDR: ":8081"
+  K8S_NAMESPACE: "flowjs"
+  ENGINE_IMAGE: "flowjs-engine:latest"
+  DATABASE_URL: "postgres://admin:flowjs_pass@postgres:5432/flowjs_config?sslmode=disable"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator
+  namespace: flowjs
+  labels:
+    app: orchestrator
+    app.kubernetes.io/part-of: flowjs-works
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orchestrator
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: orchestrator
+    spec:
+      serviceAccountName: flowjs-orchestrator
+      containers:
+        - name: orchestrator
+          image: flowjs-orchestrator:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8081
+              name: http
+          envFrom:
+            - configMapRef:
+                name: orchestrator-config
+          env:
+            - name: SECRETS_AES_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: engine-secret
+                  key: SECRETS_AES_KEY
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orchestrator
+  namespace: flowjs
+  labels:
+    app: orchestrator
+spec:
+  selector:
+    app: orchestrator
+  ports:
+    - port: 8081
+      targetPort: 8081
+      name: http
