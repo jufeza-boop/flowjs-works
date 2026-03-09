@@ -127,8 +127,6 @@ func deploymentName(flowID string) string {
 // through a ConfigMap-less direct env block to keep each deployment self-contained.
 func (c *FlowController) buildDeploymentManifest(flowID string) map[string]interface{} {
 	name := deploymentName(flowID)
-	one := int64(1)
-	_ = one
 
 	return map[string]interface{}{
 		"apiVersion": "apps/v1",

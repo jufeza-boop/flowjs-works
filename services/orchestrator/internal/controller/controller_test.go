@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
@@ -72,12 +71,8 @@ func TestFlowController_Deploy(t *testing.T) {
 
 func TestFlowController_Stop(t *testing.T) {
 	apiURL, calls := setupFakeK8s(t)
-	os.Setenv("KUBECONFIG_TOKEN", "fake-token")
-	os.Setenv("KUBECONFIG_API_SERVER", apiURL)
-	t.Cleanup(func() {
-		os.Unsetenv("KUBECONFIG_TOKEN")
-		os.Unsetenv("KUBECONFIG_API_SERVER")
-	})
+	t.Setenv("KUBECONFIG_TOKEN", "fake-token")
+	t.Setenv("KUBECONFIG_API_SERVER", apiURL)
 
 	cfg := controller.Config{Namespace: "flowjs"}
 	ctrl, err := controller.New(cfg)
@@ -98,12 +93,8 @@ func TestDeploymentName_Truncation(t *testing.T) {
 	// We can test the side-effect: Deploy sends a request with a path that
 	// contains the deployment name. Names must be at most 63 chars.
 	apiURL, calls := setupFakeK8s(t)
-	os.Setenv("KUBECONFIG_TOKEN", "fake-token")
-	os.Setenv("KUBECONFIG_API_SERVER", apiURL)
-	t.Cleanup(func() {
-		os.Unsetenv("KUBECONFIG_TOKEN")
-		os.Unsetenv("KUBECONFIG_API_SERVER")
-	})
+	t.Setenv("KUBECONFIG_TOKEN", "fake-token")
+	t.Setenv("KUBECONFIG_API_SERVER", apiURL)
 
 	cfg := controller.Config{Namespace: "flowjs"}
 	ctrl, _ := controller.New(cfg)
