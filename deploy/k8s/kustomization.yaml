@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: flowjs
+
+resources:
+  - namespace.yaml
+  - nats/nats.yaml
+  - postgres/postgres.yaml
+  - audit-logger/audit-logger.yaml
+  - engine/engine.yaml
+  - designer/designer.yaml
+  - orchestrator/orchestrator.yaml

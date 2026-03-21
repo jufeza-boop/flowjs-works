@@ -1,0 +1,144 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-logger-config
+  namespace: flowjs
+  labels:
+    app: audit-logger
+data:
+  APP_ENV: "production"
+  NATS_URL: "nats://nats:4222"
+  HTTP_ADDR: ":8080"
+  # ALLOWED_ORIGINS is set per-environment via the deployment env overrides.
+  ALLOWED_ORIGINS: "http://designer"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-logger
+  namespace: flowjs
+  labels:
+    app: audit-logger
+    app.kubernetes.io/part-of: flowjs-works
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: audit-logger
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: audit-logger
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8080"
+    spec:
+      # Wait for PostgreSQL and NATS before starting audit-logger.
+      # This ensures the service can connect to its dependencies immediately.
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.35
+          command:
+            - 'sh'
+            - '-c'
+            - |
+              echo "Waiting for PostgreSQL at postgres:5432..."
+              for i in $(seq 1 60); do
+                if nc -z postgres 5432 2>/dev/null; then
+                  echo "PostgreSQL is ready!"
+                  exit 0
+                fi
+                echo "Attempt $i/60 - PostgreSQL not ready yet, retrying in 2 seconds..."
+                sleep 2
+              done
+              echo "ERROR: PostgreSQL did not become ready in 120 seconds"
+              exit 1
+        - name: wait-for-nats
+          image: busybox:1.35
+          command:
+            - 'sh'
+            - '-c'
+            - |
+              echo "Waiting for NATS at nats:4222..."
+              for i in $(seq 1 60); do
+                if nc -z nats 4222 2>/dev/null; then
+                  echo "NATS is ready!"
+                  exit 0
+                fi
+                echo "Attempt $i/60 - NATS not ready yet, retrying in 2 seconds..."
+                sleep 2
+              done
+              echo "ERROR: NATS did not become ready in 120 seconds"
+              exit 1
+      containers:
+        - name: audit-logger
+          image: flowjs-audit-logger:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          envFrom:
+            - configMapRef:
+                name: audit-logger-config
+          env:
+            - name: POSTGRES_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: audit-logger-secret
+                  key: POSTGRES_DSN
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+---
+# Secret for audit-logger DSN — override in production with your actual DSN.
+# The value below is the base64 encoding of the local-dev default DSN.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: audit-logger-secret
+  namespace: flowjs
+  labels:
+    app: audit-logger
+type: Opaque
+stringData:
+  POSTGRES_DSN: "host=postgres port=5432 user=admin password=flowjs_pass dbname=flowjs_audit sslmode=disable"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-logger
+  namespace: flowjs
+  labels:
+    app: audit-logger
+spec:
+  selector:
+    app: audit-logger
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http

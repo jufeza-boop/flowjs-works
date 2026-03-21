@@ -3,3 +3,5 @@
 flowjs-works.code-workspace
 .vscode/launch.json
 node_modules/
+# Resumen de despliegue de produccion (contiene credenciales)
+deploy-prod-summary.txt
