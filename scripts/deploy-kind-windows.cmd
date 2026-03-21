@@ -235,7 +235,7 @@ echo [OK] %IMG_ORCH% construida.
 echo.
 
 rem --- Designer (SPA React) ---
-rem Las variables VITE_* se baquean en el bundle durante el build.
+rem Las variables VITE_* se hornean en el bundle durante el build.
 rem Los valores por defecto en api.ts son exactamente los puertos de port-forward
 rem (localhost:9090 para engine, localhost:8080 para audit-logger), por lo que
 rem no es necesario pasar --build-arg aqui.
