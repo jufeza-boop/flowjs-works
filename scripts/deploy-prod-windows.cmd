@@ -55,7 +55,7 @@ pause
 
 rem ── Ruta raiz del repositorio ────────────────────────────────────────────────
 pushd "%~dp0.." >nul 2>&1
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] No se pudo acceder al directorio raiz del repositorio.
     goto :error
 )
@@ -74,11 +74,11 @@ rem ============================================================================
 rem  PASO 0 — Verificacion de prerrequisitos
 rem ============================================================================
 echo.
-echo ── PASO 0: Verificando prerrequisitos ──────────────────────────────────────
+echo -- PASO 0: Verificando prerrequisitos --------------------------------------
 echo.
 
 where docker >nul 2>&1
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] 'docker' no encontrado en el PATH.
     echo         Instala Docker Desktop: https://www.docker.com/products/docker-desktop/
     goto :error
@@ -86,7 +86,7 @@ if %ERRORLEVEL% neq 0 (
 echo [OK] docker encontrado.
 
 docker info >nul 2>&1
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] Docker no esta en ejecucion.
     echo         Inicia Docker Desktop y espera a que el icono de la bandeja sea estable.
     goto :error
@@ -94,7 +94,7 @@ if %ERRORLEVEL% neq 0 (
 echo [OK] Docker esta en ejecucion.
 
 where kubectl >nul 2>&1
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] 'kubectl' no encontrado en el PATH.
     echo         Descarga: https://kubernetes.io/docs/tasks/tools/install-kubectl-windows/
     echo         O con winget: winget install Kubernetes.kubectl
@@ -103,7 +103,7 @@ if %ERRORLEVEL% neq 0 (
 echo [OK] kubectl encontrado.
 
 where curl >nul 2>&1
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [AVISO] 'curl' no encontrado. Los health checks usaran PowerShell.
     set USE_CURL=0
 ) else (
@@ -121,7 +121,7 @@ rem  El usuario introduce los valores especificos de su entorno de produccion.
 rem  Los valores con [default] se usan si se pulsa Enter sin escribir nada.
 rem ============================================================================
 echo.
-echo ── PASO 1: Configuracion de produccion ────────────────────────────────────
+echo -- PASO 1: Configuracion de produccion ------------------------------------
 echo.
 echo   Introduce los valores para tu entorno. Pulsa Enter para usar el [default].
 echo.
@@ -136,7 +136,7 @@ echo     ACR        : miregistry.azurecr.io
 echo.
 set /p "REGISTRY=  Registro [docker.io/miorg]: "
 if "!REGISTRY!"=="" set REGISTRY=docker.io/miorg
-echo   -> REGISTRY=%REGISTRY%
+echo   -^> REGISTRY=%REGISTRY%
 echo.
 
 rem --- Tag de version ---
@@ -147,7 +147,7 @@ if "!GIT_TAG!"=="" (
 )
 set /p "TAG=  Tag de version [!GIT_TAG!]: "
 if "!TAG!"=="" set TAG=!GIT_TAG!
-echo   -> TAG=%TAG%
+echo   -^> TAG=%TAG%
 echo.
 
 rem --- Contexto kubectl ---
@@ -158,7 +158,7 @@ kubectl config get-contexts --no-headers 2>nul | findstr /v "^$"
 echo.
 set /p "KUBE_CONTEXT=  Contexto kubectl [!CURRENT_CTX!]: "
 if "!KUBE_CONTEXT!"=="" set KUBE_CONTEXT=!CURRENT_CTX!
-echo   -> KUBE_CONTEXT=%KUBE_CONTEXT%
+echo   -^> KUBE_CONTEXT=%KUBE_CONTEXT%
 echo.
 
 rem --- Dominios de produccion ---
@@ -174,15 +174,15 @@ if "!ENGINE_DOMAIN!"=="" set ENGINE_DOMAIN=api.flowjs.mi-empresa.com
 set /p "AUDIT_DOMAIN=  Dominio del Audit Logger [audit.flowjs.mi-empresa.com]: "
 if "!AUDIT_DOMAIN!"=="" set AUDIT_DOMAIN=audit.flowjs.mi-empresa.com
 
-echo   -> DESIGNER_DOMAIN=%DESIGNER_DOMAIN%
-echo   -> ENGINE_DOMAIN=%ENGINE_DOMAIN%
-echo   -> AUDIT_DOMAIN=%AUDIT_DOMAIN%
+echo   -^> DESIGNER_DOMAIN=%DESIGNER_DOMAIN%
+echo   -^> ENGINE_DOMAIN=%ENGINE_DOMAIN%
+echo   -^> AUDIT_DOMAIN=%AUDIT_DOMAIN%
 echo.
 
 rem --- Protocolo (http o https) ---
 set /p "PROTO=  Protocolo [https]: "
 if "!PROTO!"=="" set PROTO=https
-echo   -> PROTO=%PROTO%
+echo   -^> PROTO=%PROTO%
 echo.
 
 rem --- Base de datos ---
@@ -192,11 +192,11 @@ echo     external    = usa una base de datos gestionada (RDS, Cloud SQL, Azure D
 echo.
 set /p "DB_MODE=  Modo de base de datos (in-cluster / external) [in-cluster]: "
 if "!DB_MODE!"=="" set DB_MODE=in-cluster
-echo   -> DB_MODE=%DB_MODE%
+echo   -^> DB_MODE=%DB_MODE%
 echo.
 
 if /i "!DB_MODE!"=="external" (
-    echo   DSN de la base de datos de AUDITORIA (flowjs_audit):
+    echo   DSN de la base de datos de AUDITORIA ^(flowjs_audit^):
     echo   Formato: host=HOST port=5432 user=USER password=PASS dbname=flowjs_audit sslmode=require
     echo.
     set /p "AUDIT_DSN=  POSTGRES_DSN audit []: "
@@ -206,7 +206,7 @@ if /i "!DB_MODE!"=="external" (
     )
 
     echo.
-    echo   DSN / DATABASE_URL de la base de datos de CONFIGURACION (flowjs_config):
+    echo   DSN / DATABASE_URL de la base de datos de CONFIGURACION ^(flowjs_config^):
     echo   Formato: postgres://USER:PASS@HOST:5432/flowjs_config?sslmode=require
     echo.
     set /p "CONFIG_DSN=  DATABASE_URL config []: "
@@ -229,7 +229,7 @@ echo     none     = sin Ingress; usar LoadBalancer directamente
 echo.
 set /p "INGRESS_CLASS=  Ingress class (nginx / traefik / none) [nginx]: "
 if "!INGRESS_CLASS!"=="" set INGRESS_CLASS=nginx
-echo   -> INGRESS_CLASS=%INGRESS_CLASS%
+echo   -^> INGRESS_CLASS=%INGRESS_CLASS%
 echo.
 
 rem --- TLS ---
@@ -239,7 +239,7 @@ if /i not "!INGRESS_CLASS!"=="none" (
     if /i "!TLS_ENABLED!"=="s" (
         set /p "TLS_ISSUER=  Nombre del ClusterIssuer de cert-manager [letsencrypt-prod]: "
         if "!TLS_ISSUER!"=="" set TLS_ISSUER=letsencrypt-prod
-        echo   -> TLS_ISSUER=%TLS_ISSUER%
+        echo   -^> TLS_ISSUER=%TLS_ISSUER%
     ) else (
         set TLS_ISSUER=
     )
@@ -247,7 +247,7 @@ if /i not "!INGRESS_CLASS!"=="none" (
 echo.
 
 rem --- Confirmacion ---
-echo ────────────────────────────────────────────────────────────────
+echo ----------------------------------------------------------------
 echo   Resumen de configuracion:
 echo     REGISTRY        = !REGISTRY!
 echo     TAG             = !TAG!
@@ -258,7 +258,7 @@ echo     AUDIT_DOMAIN    = !AUDIT_DOMAIN!
 echo     PROTO           = !PROTO!
 echo     DB_MODE         = !DB_MODE!
 echo     INGRESS_CLASS   = !INGRESS_CLASS!
-echo ────────────────────────────────────────────────────────────────
+echo ----------------------------------------------------------------
 echo.
 set /p "CONFIRM=  Continuar con estos valores? (s/n) [s]: "
 if "!CONFIRM!"=="" set CONFIRM=s
@@ -271,7 +271,7 @@ echo.
 
 rem Establecer el contexto kubectl seleccionado
 kubectl config use-context "!KUBE_CONTEXT!" >nul 2>&1
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] No se pudo establecer el contexto kubectl '!KUBE_CONTEXT!'.
     echo         Comprueba: kubectl config get-contexts
     goto :error
@@ -295,7 +295,7 @@ rem  Para registros en la nube puede ser necesario usar la CLI del proveedor
 rem  antes de este script (aws ecr get-login-password | docker login ...).
 rem ============================================================================
 echo.
-echo ── PASO 2: Login al registro de contenedores ───────────────────────────────
+echo -- PASO 2: Login al registro de contenedores -------------------------------
 echo.
 echo [INFO] Intentando docker login en !REGISTRY! ...
 echo        (Si usas ECR/GCR/ACR, ya deberias haberte autenticado con la CLI del
@@ -305,7 +305,7 @@ echo.
 
 rem Detectar si es un registro cloud que gestiona su propio login
 echo !REGISTRY! | findstr /i "amazonaws.com" >nul 2>&1
-if %ERRORLEVEL% equ 0 (
+if not errorlevel 1 (
     echo [INFO] Registro AWS ECR detectado.
     echo        Asegurate de haber ejecutado:
     echo          aws ecr get-login-password --region ^<region^> ^| docker login --username AWS --password-stdin !REGISTRY!
@@ -315,7 +315,7 @@ if %ERRORLEVEL% equ 0 (
 )
 
 echo !REGISTRY! | findstr /i "gcr.io\|pkg.dev" >nul 2>&1
-if %ERRORLEVEL% equ 0 (
+if not errorlevel 1 (
     echo [INFO] Registro Google GCR/Artifact Registry detectado.
     echo        Asegurate de haber ejecutado:
     echo          gcloud auth configure-docker
@@ -325,7 +325,7 @@ if %ERRORLEVEL% equ 0 (
 )
 
 echo !REGISTRY! | findstr /i "azurecr.io" >nul 2>&1
-if %ERRORLEVEL% equ 0 (
+if not errorlevel 1 (
     echo [INFO] Registro Azure ACR detectado.
     echo        Asegurate de haber ejecutado:
     echo          az acr login --name ^<nombre-del-acr^>
@@ -341,7 +341,7 @@ if "!REGISTRY_USER!"=="" (
     echo         Asegurate de estar ya autenticado con: docker login !REGISTRY!
 ) else (
     docker login "!REGISTRY!" --username "!REGISTRY_USER!"
-    if %ERRORLEVEL% neq 0 (
+    if errorlevel 1 (
         echo [ERROR] docker login fallo.
         goto :error
     )
@@ -358,7 +358,7 @@ rem  Deben apuntar a las URLs publicas que el NAVEGADOR del usuario usara.
 rem  (Paso 2 de la guia de despliegue)
 rem ============================================================================
 echo.
-echo ── PASO 3: Construyendo imagenes Docker para produccion ────────────────────
+echo -- PASO 3: Construyendo imagenes Docker para produccion --------------------
 echo.
 echo [INFO] VITE_ENGINE_API_URL = !ENGINE_URL!
 echo [INFO] VITE_AUDIT_API_URL  = !AUDIT_URL!
@@ -371,7 +371,7 @@ echo [INFO] Construyendo %IMG_ENGINE% ...
 docker build -t "!IMG_ENGINE!" ^
     -f services\engine\Dockerfile ^
     services\engine
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] Fallo al construir la imagen del Engine.
     goto :error
 )
@@ -383,7 +383,7 @@ echo [INFO] Construyendo !IMG_AUDIT! ...
 docker build -t "!IMG_AUDIT!" ^
     -f services\audit-logger\Dockerfile ^
     services\audit-logger
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] Fallo al construir la imagen del Audit Logger.
     goto :error
 )
@@ -395,7 +395,7 @@ echo [INFO] Construyendo !IMG_ORCH! ...
 docker build -t "!IMG_ORCH!" ^
     -f services\orchestrator\Dockerfile ^
     services\orchestrator
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] Fallo al construir la imagen del Orchestrator.
     goto :error
 )
@@ -411,7 +411,7 @@ docker build -t "!IMG_DESIGNER!" ^
     --build-arg "VITE_AUDIT_API_URL=!AUDIT_URL!" ^
     -f apps\designer\Dockerfile ^
     apps\designer
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] Fallo al construir la imagen del Designer.
     goto :error
 )
@@ -425,12 +425,12 @@ rem  PASO 4 — Publicar las imagenes en el registro de contenedores
 rem  (Paso 3 de la guia de despliegue)
 rem ============================================================================
 echo.
-echo ── PASO 4: Publicando imagenes en el registro ──────────────────────────────
+echo -- PASO 4: Publicando imagenes en el registro ------------------------------
 echo.
 
 echo [INFO] Publicando !IMG_ENGINE! ...
 docker push "!IMG_ENGINE!"
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] Fallo al publicar la imagen del Engine.
     echo         Comprueba que tienes permisos de escritura en !REGISTRY!
     goto :error
@@ -439,7 +439,7 @@ echo [OK] !IMG_ENGINE! publicada.
 
 echo [INFO] Publicando !IMG_AUDIT! ...
 docker push "!IMG_AUDIT!"
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] Fallo al publicar la imagen del Audit Logger.
     goto :error
 )
@@ -447,7 +447,7 @@ echo [OK] !IMG_AUDIT! publicada.
 
 echo [INFO] Publicando !IMG_ORCH! ...
 docker push "!IMG_ORCH!"
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] Fallo al publicar la imagen del Orchestrator.
     goto :error
 )
@@ -455,7 +455,7 @@ echo [OK] !IMG_ORCH! publicada.
 
 echo [INFO] Publicando !IMG_DESIGNER! ...
 docker push "!IMG_DESIGNER!"
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] Fallo al publicar la imagen del Designer.
     goto :error
 )
@@ -471,10 +471,10 @@ rem  Ambos valores se inyectan en el cluster via kubectl patch; nunca se
 rem  guardan en los YAML del repositorio.
 rem ============================================================================
 echo.
-echo ── PASO 5: Generando secretos de produccion ────────────────────────────────
+echo -- PASO 5: Generando secretos de produccion --------------------------------
 echo.
 
-for /f "delims=" %%K in ('powershell -NoProfile -Command "[System.Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))"') do set AES_KEY=%%K
+for /f "delims=" %%K in ('powershell -NoProfile -Command "$b = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create^(^).GetBytes^($b^); [Convert]::ToBase64String^($b^)"') do set AES_KEY=%%K
 if "!AES_KEY!"=="" (
     echo [ERROR] No se pudo generar la clave AES con PowerShell.
     goto :error
@@ -483,12 +483,12 @@ echo [OK] Clave AES-256 generada (256 bits, base64).
 
 if /i "!DB_MODE!"=="in-cluster" (
     rem Generar contrasena segura para PostgreSQL
-    for /f "delims=" %%P in ('powershell -NoProfile -Command "[System.Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(24))"') do set DB_PASSWORD=%%P
+    for /f "delims=" %%P in ('powershell -NoProfile -Command "$b = New-Object byte[] 24; [Security.Cryptography.RandomNumberGenerator]::Create^(^).GetBytes^($b^); [Convert]::ToBase64String^($b^)"') do set DB_PASSWORD=%%P
     if "!DB_PASSWORD!"=="" (
         echo [ERROR] No se pudo generar la contrasena de PostgreSQL.
         goto :error
     )
-    echo [OK] Contrasena de PostgreSQL generada (192 bits, base64).
+    echo [OK] Contrasena de PostgreSQL generada ^(192 bits, base64^).
 
     rem Construir los DSNs in-cluster con las credenciales generadas
     set DB_USER=flowjs_admin
@@ -506,12 +506,12 @@ rem  PASO 6 — Aplicar los manifiestos Kubernetes base via kustomize
 rem  (Paso 6 de la guia de despliegue)
 rem ============================================================================
 echo.
-echo ── PASO 6: Aplicando manifiestos Kubernetes ────────────────────────────────
+echo -- PASO 6: Aplicando manifiestos Kubernetes --------------------------------
 echo.
 
 pushd "%REPO_ROOT%" >nul
 kubectl apply -k deploy\k8s
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] Fallo al aplicar los manifiestos con kustomize.
     goto :error
 )
@@ -527,34 +527,34 @@ rem  contrasena de PostgreSQL e imagePullPolicy: Always.
 rem  (Paso 4 de la guia de despliegue)
 rem ============================================================================
 echo.
-echo ── PASO 7: Aplicando configuracion de produccion al cluster ────────────────
+echo -- PASO 7: Aplicando configuracion de produccion al cluster ----------------
 echo.
 
 rem 7.1 — Actualizar referencias de imagen en los Deployments
 echo [INFO] 7.1 Actualizando imagen del Engine a !IMG_ENGINE! ...
 kubectl -n !NAMESPACE! set image deployment/engine engine="!IMG_ENGINE!"
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] No se pudo actualizar la imagen del engine.
     goto :error
 )
 
 echo [INFO] 7.1 Actualizando imagen del Audit Logger a !IMG_AUDIT! ...
 kubectl -n !NAMESPACE! set image deployment/audit-logger audit-logger="!IMG_AUDIT!"
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] No se pudo actualizar la imagen del audit-logger.
     goto :error
 )
 
 echo [INFO] 7.1 Actualizando imagen del Orchestrator a !IMG_ORCH! ...
 kubectl -n !NAMESPACE! set image deployment/orchestrator orchestrator="!IMG_ORCH!"
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] No se pudo actualizar la imagen del orchestrator.
     goto :error
 )
 
 echo [INFO] 7.1 Actualizando imagen del Designer a !IMG_DESIGNER! ...
 kubectl -n !NAMESPACE! set image deployment/designer designer="!IMG_DESIGNER!"
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] No se pudo actualizar la imagen del designer.
     goto :error
 )
@@ -575,7 +575,7 @@ echo [INFO] 7.3 Aplicando clave AES-256 de produccion...
 kubectl -n !NAMESPACE! patch secret engine-secret ^
     --type=merge ^
     -p "{\"stringData\":{\"SECRETS_AES_KEY\":\"!AES_KEY!\"}}"
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] No se pudo parchear engine-secret.
     goto :error
 )
@@ -587,15 +587,15 @@ echo [INFO] 7.4 Actualizando ALLOWED_ORIGINS a '!DESIGNER_URL!' ...
 kubectl -n !NAMESPACE! patch configmap engine-config ^
     --type=merge ^
     -p "{\"data\":{\"ALLOWED_ORIGINS\":\"!DESIGNER_URL!\"}}"
-if %ERRORLEVEL% neq 0 (
-    echo [ERROR] No se pudo parchear engine-config (ALLOWED_ORIGINS).
+if errorlevel 1 (
+    echo [ERROR] No se pudo parchear engine-config ^(ALLOWED_ORIGINS^).
     goto :error
 )
 kubectl -n !NAMESPACE! patch configmap audit-logger-config ^
     --type=merge ^
     -p "{\"data\":{\"ALLOWED_ORIGINS\":\"!DESIGNER_URL!\"}}"
-if %ERRORLEVEL% neq 0 (
-    echo [ERROR] No se pudo parchear audit-logger-config (ALLOWED_ORIGINS).
+if errorlevel 1 (
+    echo [ERROR] No se pudo parchear audit-logger-config ^(ALLOWED_ORIGINS^).
     goto :error
 )
 echo [OK] ALLOWED_ORIGINS actualizado.
@@ -605,7 +605,7 @@ echo [INFO] 7.5 Actualizando POSTGRES_DSN del Audit Logger...
 kubectl -n !NAMESPACE! patch secret audit-logger-secret ^
     --type=merge ^
     -p "{\"stringData\":{\"POSTGRES_DSN\":\"!AUDIT_DSN!\"}}"
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] No se pudo parchear audit-logger-secret.
     goto :error
 )
@@ -629,7 +629,7 @@ if /i "!DB_MODE!"=="in-cluster" (
     kubectl -n !NAMESPACE! patch secret postgres-secret ^
         --type=merge ^
         -p "{\"data\":{\"POSTGRES_USER\":\"!DB_USER_B64!\",\"POSTGRES_PASSWORD\":\"!DB_PASS_B64!\"}}"
-    if %ERRORLEVEL% neq 0 (
+    if errorlevel 1 (
         echo [ERROR] No se pudo parchear postgres-secret.
         goto :error
     )
@@ -658,7 +658,7 @@ rem  ya inicializadas o se inicializan manualmente con los scripts de init-db/.
 rem  (Paso 5 de la guia de despliegue)
 rem ============================================================================
 echo.
-echo ── PASO 8: Inicializando bases de datos ────────────────────────────────────
+echo -- PASO 8: Inicializando bases de datos ------------------------------------
 echo.
 
 if /i "!DB_MODE!"=="external" (
@@ -679,41 +679,51 @@ kubectl -n !NAMESPACE! wait pod ^
     --selector=app=postgres ^
     --for=condition=Ready ^
     --timeout=!POD_TIMEOUT!s
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] PostgreSQL no estuvo listo en !POD_TIMEOUT! segundos.
     echo         kubectl -n !NAMESPACE! describe pod -l app=postgres
     goto :error
 )
 
-for /f "delims=" %%P in ('kubectl -n !NAMESPACE! get pod -l app=postgres -o jsonpath={.items[0].metadata.name} 2^>nul') do set POSTGRES_POD=%%P
+for /f "usebackq tokens=*" %%P in (`kubectl get pods -n !NAMESPACE! -l app^=postgres -o jsonpath^="{.items[0].metadata.name}"`) do (
+    set "POSTGRES_POD=%%P"
+)
 if "!POSTGRES_POD!"=="" (
     echo [ERROR] No se encontro el pod de PostgreSQL.
+    echo         Salida de diagnostico:
+    kubectl -n !NAMESPACE! get pods -l app=postgres
     goto :error
 )
 echo [OK] Pod PostgreSQL: !POSTGRES_POD!
 
-echo [INFO] Copiando scripts SQL al pod...
+echo [INFO] Copiando scripts SQL al pod !POSTGRES_POD!...
+
 kubectl -n !NAMESPACE! cp "%REPO_ROOT%\init-db\01-init.sql" "!POSTGRES_POD!:/tmp/01-init.sql"
 kubectl -n !NAMESPACE! cp "%REPO_ROOT%\init-db\02-audit-schema.sql" "!POSTGRES_POD!:/tmp/02-audit-schema.sql"
 kubectl -n !NAMESPACE! cp "%REPO_ROOT%\init-db\03-config-schema.sql" "!POSTGRES_POD!:/tmp/03-config-schema.sql"
-echo [OK] Scripts copiados.
+
+if %errorlevel% equ 0 (
+    echo [OK] Scripts copiados correctamente.
+) else (
+    echo [ERROR] Hubo un problema al copiar los archivos SQL.
+)
 
 echo [INFO] Ejecutando 01-init.sql ...
 kubectl -n !NAMESPACE! exec "!POSTGRES_POD!" -- psql -U !DB_USER! -f /tmp/01-init.sql
-if %ERRORLEVEL% neq 0 (
-    echo [AVISO] 01-init.sql reporto errores (puede ser normal si las BDs ya existen).
+if errorlevel 1 (
+    echo [AVISO] 01-init.sql reporto errores ^(puede ser normal si las BDs ya existen^).
 )
 
 echo [INFO] Ejecutando 02-audit-schema.sql ...
 kubectl -n !NAMESPACE! exec "!POSTGRES_POD!" -- psql -U !DB_USER! -f /tmp/02-audit-schema.sql
-if %ERRORLEVEL% neq 0 (
-    echo [AVISO] 02-audit-schema.sql reporto errores (puede ser normal).
+if errorlevel 1 (
+    echo [AVISO] 02-audit-schema.sql reporto errores ^(puede ser normal^).
 )
 
 echo [INFO] Ejecutando 03-config-schema.sql ...
 kubectl -n !NAMESPACE! exec "!POSTGRES_POD!" -- psql -U !DB_USER! -f /tmp/03-config-schema.sql
-if %ERRORLEVEL% neq 0 (
-    echo [AVISO] 03-config-schema.sql reporto errores (puede ser normal).
+if errorlevel 1 (
+    echo [AVISO] 03-config-schema.sql reporto errores ^(puede ser normal^).
 )
 echo [OK] Bases de datos inicializadas.
 
@@ -727,7 +737,7 @@ rem  Se genera un ingress.yaml temporal con los dominios configurados y
 rem  se aplica al cluster.
 rem ============================================================================
 echo.
-echo ── PASO 9: Aplicando Ingress de produccion ─────────────────────────────────
+echo -- PASO 9: Aplicando Ingress de produccion ---------------------------------
 echo.
 
 if /i "!INGRESS_CLASS!"=="none" (
@@ -813,7 +823,7 @@ rem Escribir el YAML base del Ingress
 
 echo [INFO] Aplicando Ingress (controller: !INGRESS_CLASS!)...
 kubectl apply -f "!INGRESS_TMP!"
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] No se pudo aplicar el Ingress.
     echo         Revisa si el Ingress Controller esta instalado en el cluster.
     del "!INGRESS_TMP!" >nul 2>&1
@@ -823,9 +833,9 @@ del "!INGRESS_TMP!" >nul 2>&1
 echo [OK] Ingress aplicado correctamente.
 echo.
 echo [INFO] Ingress rules creados:
-echo          !DESIGNER_DOMAIN!  ->  svc/designer:80
-echo          !ENGINE_DOMAIN!   ->  svc/engine:9090
-echo          !AUDIT_DOMAIN!    ->  svc/audit-logger:8080
+echo          !DESIGNER_DOMAIN!  -^>  svc/designer:80
+echo          !ENGINE_DOMAIN!   -^>  svc/engine:9090
+echo          !AUDIT_DOMAIN!    -^>  svc/audit-logger:8080
 echo.
 
 :skip_ingress
@@ -835,12 +845,12 @@ rem  PASO 10 — Esperar a que todos los deployments completen el rollout
 rem  (Paso 7 de la guia de despliegue)
 rem ============================================================================
 echo.
-echo ── PASO 10: Esperando rollout de todos los deployments ──────────────────────
+echo -- PASO 10: Esperando rollout de todos los deployments ----------------------
 echo.
 
 echo [INFO] Aguardando rollout del engine...
 kubectl -n !NAMESPACE! rollout status deployment/engine --timeout=!POD_TIMEOUT!s
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] El engine no completo el rollout.
     echo         kubectl -n !NAMESPACE! describe deployment engine
     echo         kubectl -n !NAMESPACE! logs -l app=engine --tail=50
@@ -850,7 +860,7 @@ echo [OK] engine: rollout completo.
 
 echo [INFO] Aguardando rollout del audit-logger...
 kubectl -n !NAMESPACE! rollout status deployment/audit-logger --timeout=!POD_TIMEOUT!s
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] El audit-logger no completo el rollout.
     goto :error
 )
@@ -858,7 +868,7 @@ echo [OK] audit-logger: rollout completo.
 
 echo [INFO] Aguardando rollout del orchestrator...
 kubectl -n !NAMESPACE! rollout status deployment/orchestrator --timeout=!POD_TIMEOUT!s
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] El orchestrator no completo el rollout.
     goto :error
 )
@@ -866,7 +876,7 @@ echo [OK] orchestrator: rollout completo.
 
 echo [INFO] Aguardando rollout del designer...
 kubectl -n !NAMESPACE! rollout status deployment/designer --timeout=!POD_TIMEOUT!s
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] El designer no completo el rollout.
     goto :error
 )
@@ -884,7 +894,7 @@ rem  Solo se intenta si los dominios son alcanzables desde esta maquina.
 rem  Es normal que fallen si los DNS o el LoadBalancer aun no han propagado.
 rem ============================================================================
 echo.
-echo ── PASO 11: Verificando health checks ──────────────────────────────────────
+echo -- PASO 11: Verificando health checks --------------------------------------
 echo.
 echo [INFO] Probando /health del Engine en !ENGINE_URL!/health ...
 echo        (Si el DNS aun no ha propagado, esto puede fallar. Es normal.)
@@ -898,7 +908,7 @@ for /l %%i in (1,1,6) do (
             set HEALTH_OK=1
             echo [OK] Engine /health respondio 200 OK.
         ) else (
-            echo [INFO] Intento %%i/6 (codigo: !HTTP_CODE!) ... reintentando en 10s...
+            echo [INFO] Intento %%i/6 ^(codigo: !HTTP_CODE!^) ... reintentando en 10s...
             timeout /t 10 /nobreak >nul
         )
     )
@@ -917,7 +927,7 @@ for /l %%i in (1,1,6) do (
             set HEALTH_OK=1
             echo [OK] Audit Logger /health respondio 200 OK.
         ) else (
-            echo [INFO] Intento %%i/6 (codigo: !HTTP_CODE!) ... reintentando en 10s...
+            echo [INFO] Intento %%i/6 ^(codigo: !HTTP_CODE!^) ... reintentando en 10s...
             timeout /t 10 /nobreak >nul
         )
     )
@@ -934,7 +944,7 @@ rem  (Paso 10 de la guia de despliegue)
 rem  Se omite si el engine no fue alcanzable en el Paso 11.
 rem ============================================================================
 echo.
-echo ── PASO 12: Smoke test — flujo 'hola-mundo-prod' ───────────────────────────
+echo -- PASO 12: Smoke test — flujo 'hola-mundo-prod' ---------------------------
 echo.
 echo [INFO] Creando flujo de prueba en !ENGINE_URL!/api/v1/processes ...
 
@@ -959,7 +969,7 @@ rem  Este fichero NO se debe commitear al repositorio (esta en .gitignore).
 rem  Contiene las credenciales generadas — guardalo en un lugar seguro.
 rem ============================================================================
 echo.
-echo ── PASO 13: Guardando resumen de configuracion ──────────────────────────────
+echo -- PASO 13: Guardando resumen de configuracion ------------------------------
 echo.
 
 set SUMMARY_FILE=%REPO_ROOT%\deploy-prod-summary.txt
@@ -981,7 +991,7 @@ set SUMMARY_FILE=%REPO_ROOT%\deploy-prod-summary.txt
     echo   Engine API   : !ENGINE_URL!
     echo   Audit Logger : !AUDIT_URL!
     echo.
-    echo === Secretos generados (guardar en lugar seguro) ===
+    echo === Secretos generados ^(guardar en lugar seguro^) ===
     echo   SECRETS_AES_KEY : !AES_KEY!
     if /i "!DB_MODE!"=="in-cluster" (
         echo   DB_USER         : !DB_USER!
@@ -989,8 +999,8 @@ set SUMMARY_FILE=%REPO_ROOT%\deploy-prod-summary.txt
         echo   AUDIT_DSN       : !AUDIT_DSN!
         echo   CONFIG_DSN      : !CONFIG_DSN!
     ) else (
-        echo   AUDIT_DSN       : (externo - proporcionado por el usuario)
-        echo   CONFIG_DSN      : (externo - proporcionado por el usuario)
+        echo   AUDIT_DSN       : ^(externo - proporcionado por el usuario^)
+        echo   CONFIG_DSN      : ^(externo - proporcionado por el usuario^)
     )
     echo.
     echo === Configuracion de Ingress ===
@@ -1025,14 +1035,14 @@ echo   Namespace: !NAMESPACE!
 echo   Tag      : !TAG!
 echo.
 echo   Servicios accesibles:
-echo   ┌───────────────────────────────────────────────────────────┐
-echo   │  Designer UI    ->  !DESIGNER_URL!
-echo   │  Engine API     ->  !ENGINE_URL!
-echo   │  Audit Logger   ->  !AUDIT_URL!
-echo   └───────────────────────────────────────────────────────────┘
+echo   +-----------------------------------------------------------+
+echo   |  Designer UI    -^>  !DESIGNER_URL!
+echo   |  Engine API     -^>  !ENGINE_URL!
+echo   |  Audit Logger   -^>  !AUDIT_URL!
+echo   +-----------------------------------------------------------+
 echo.
 echo   Comandos utiles:
-echo   ─────────────────────────────────────────────────────────────
+echo ----------------------------------------------------------------
 echo   Ver todos los pods:
 echo     kubectl -n !NAMESPACE! get pods
 echo.
