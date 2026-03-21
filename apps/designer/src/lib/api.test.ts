@@ -249,7 +249,7 @@ describe('listProcesses', () => {
 
   it('returns an array of process summaries on success', async () => {
     const mockProcesses: ProcessSummary[] = [
-      { id: 'my-flow', version: '1.0.0', name: 'My Flow', status: 'draft', updated_at: '2025-01-01T00:00:00Z' },
+      { id: 'my-flow', version: '1.0.0', name: 'My Flow', status: 'draft', trigger_type: 'manual', updated_at: '2025-01-01T00:00:00Z' },
     ]
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(mockProcesses) }))
 
@@ -284,7 +284,7 @@ describe('saveProcess', () => {
   }
 
   it('returns process summary on success', async () => {
-    const summary: ProcessSummary = { id: 'p1', version: '1.0.0', name: 'P1', status: 'draft', updated_at: '2025-01-01T00:00:00Z' }
+    const summary: ProcessSummary = { id: 'p1', version: '1.0.0', name: 'P1', status: 'draft', trigger_type: 'manual', updated_at: '2025-01-01T00:00:00Z' }
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(summary) }))
 
     const result = await saveProcess(sampleDSL)

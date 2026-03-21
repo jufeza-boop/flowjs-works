@@ -40,6 +40,43 @@ spec:
         prometheus.io/path: "/metrics"
         prometheus.io/port: "8080"
     spec:
+      # Wait for PostgreSQL and NATS before starting audit-logger.
+      # This ensures the service can connect to its dependencies immediately.
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.35
+          command:
+            - 'sh'
+            - '-c'
+            - |
+              echo "Waiting for PostgreSQL at postgres:5432..."
+              for i in $(seq 1 60); do
+                if nc -z postgres 5432 2>/dev/null; then
+                  echo "PostgreSQL is ready!"
+                  exit 0
+                fi
+                echo "Attempt $i/60 - PostgreSQL not ready yet, retrying in 2 seconds..."
+                sleep 2
+              done
+              echo "ERROR: PostgreSQL did not become ready in 120 seconds"
+              exit 1
+        - name: wait-for-nats
+          image: busybox:1.35
+          command:
+            - 'sh'
+            - '-c'
+            - |
+              echo "Waiting for NATS at nats:4222..."
+              for i in $(seq 1 60); do
+                if nc -z nats 4222 2>/dev/null; then
+                  echo "NATS is ready!"
+                  exit 0
+                fi
+                echo "Attempt $i/60 - NATS not ready yet, retrying in 2 seconds..."
+                sleep 2
+              done
+              echo "ERROR: NATS did not become ready in 120 seconds"
+              exit 1
       containers:
         - name: audit-logger
           image: flowjs-audit-logger:latest

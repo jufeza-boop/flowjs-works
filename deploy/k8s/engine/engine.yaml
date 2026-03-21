@@ -57,6 +57,26 @@ spec:
     spec:
       # Graceful shutdown: allow in-flight executions to complete.
       terminationGracePeriodSeconds: 30
+      # Wait for NATS to be ready before starting the engine.
+      # This ensures audit logging is enabled from the start.
+      initContainers:
+        - name: wait-for-nats
+          image: busybox:1.35
+          command:
+            - 'sh'
+            - '-c'
+            - |
+              echo "Waiting for NATS at nats:4222..."
+              for i in $(seq 1 60); do
+                if nc -z nats 4222 2>/dev/null; then
+                  echo "NATS is ready!"
+                  exit 0
+                fi
+                echo "Attempt $i/60 - NATS not ready yet, retrying in 2 seconds..."
+                sleep 2
+              done
+              echo "ERROR: NATS did not become ready in 120 seconds"
+              exit 1
       containers:
         - name: engine
           image: flowjs-engine:latest

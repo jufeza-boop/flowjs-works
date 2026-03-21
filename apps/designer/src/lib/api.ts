@@ -17,7 +17,7 @@ export interface ProcessRecord {
 }
 
 /** Base URL for the audit-logger HTTP API */
-const AUDIT_API_BASE = import.meta.env.VITE_AUDIT_API_URL ?? 'http://localhost:8080'
+const AUDIT_API_BASE = import.meta.env.VITE_AUDIT_API_URL ?? 'http://localhost:8081'
 
 /** Base URL for the engine HTTP API */
 const ENGINE_API_BASE = import.meta.env.VITE_ENGINE_API_URL ?? 'http://localhost:9090'

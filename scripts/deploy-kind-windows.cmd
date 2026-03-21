@@ -74,7 +74,7 @@ set POD_TIMEOUT=300
 rem ── Ruta raiz del repositorio ────────────────────────────────────────────────
 rem   Este script vive en <raiz>\scripts\  ->  %~dp0.. es la raiz del repo.
 pushd "%~dp0.." >nul 2>&1
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] No se pudo acceder al directorio raiz del repositorio.
     goto :error
 )
@@ -87,11 +87,11 @@ echo.
 rem ============================================================================
 rem  PASO 0 — Verificacion de prerrequisitos
 rem ============================================================================
-echo ── PASO 0: Verificando prerrequisitos ──────────────────────────────────────
+echo -- PASO 0: Verificando prerrequisitos -----------------------------------
 echo.
 
 where docker >nul 2>&1
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] 'docker' no encontrado en el PATH.
     echo         Instala Docker Desktop: https://www.docker.com/products/docker-desktop/
     echo         O con winget: winget install Docker.DockerDesktop
@@ -100,7 +100,7 @@ if %ERRORLEVEL% neq 0 (
 echo [OK] docker encontrado.
 
 docker info >nul 2>&1
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] Docker no esta en ejecucion.
     echo         Inicia Docker Desktop y espera a que el icono de la bandeja sea estable.
     goto :error
@@ -108,7 +108,7 @@ if %ERRORLEVEL% neq 0 (
 echo [OK] Docker esta en ejecucion.
 
 where kind >nul 2>&1
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] 'kind' no encontrado en el PATH.
     echo         Descarga: https://kind.sigs.k8s.io/docs/user/quick-start/
     echo         O con winget: winget install Kubernetes.kind
@@ -117,7 +117,7 @@ if %ERRORLEVEL% neq 0 (
 echo [OK] kind encontrado.
 
 where kubectl >nul 2>&1
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] 'kubectl' no encontrado en el PATH.
     echo         Descarga: https://kubernetes.io/docs/tasks/tools/install-kubectl-windows/
     echo         O con winget: winget install Kubernetes.kubectl
@@ -126,8 +126,8 @@ if %ERRORLEVEL% neq 0 (
 echo [OK] kubectl encontrado.
 
 where curl >nul 2>&1
-if %ERRORLEVEL% neq 0 (
-    echo [AVISO] 'curl' no encontrado. El smoke test (Paso 12) usara PowerShell.
+if errorlevel 1 (
+    echo [AVISO] 'curl' no encontrado. El smoke test Paso 12 usara PowerShell.
     set USE_CURL=0
 ) else (
     echo [OK] curl encontrado.
@@ -144,11 +144,11 @@ rem  PASO 1 — Crear el cluster kind
 rem  (equivale a Paso 1 de la guia: preparar el entorno de Kubernetes local)
 rem ============================================================================
 echo.
-echo ── PASO 1: Creando cluster kind '%CLUSTER_NAME%' ───────────────────────────
+echo -- PASO 1: Creando cluster kind '%CLUSTER_NAME%' -------------------------
 echo.
 
 kind get clusters 2>nul | findstr /i "%CLUSTER_NAME%" >nul 2>&1
-if %ERRORLEVEL% equ 0 (
+if not errorlevel 1 (
     echo [INFO] El cluster '%CLUSTER_NAME%' ya existe. Se reutilizara.
     echo        Si quieres empezar desde cero ejecuta:
     echo          kind delete cluster --name %CLUSTER_NAME%
@@ -174,7 +174,7 @@ if %ERRORLEVEL% equ 0 (
     ) > "!KIND_CFG!"
 
     kind create cluster --config "!KIND_CFG!" --name "%CLUSTER_NAME%"
-    if %ERRORLEVEL% neq 0 (
+    if errorlevel 1 (
         echo [ERROR] No se pudo crear el cluster kind.
         goto :error
     )
@@ -184,7 +184,7 @@ if %ERRORLEVEL% equ 0 (
 
 rem Asegurarse de que kubectl apunta al cluster correcto
 kubectl config use-context "kind-%CLUSTER_NAME%" >nul 2>&1
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] No se pudo establecer el contexto kubectl para 'kind-%CLUSTER_NAME%'.
     goto :error
 )
@@ -196,10 +196,10 @@ rem  PASO 2 — Construir las imagenes Docker
 rem  (equivale a Paso 2 de la guia)
 rem ============================================================================
 echo.
-echo ── PASO 2: Construyendo imagenes Docker ────────────────────────────────────
+echo -- PASO 2: Construyendo imagenes Docker --------------------------------
 echo.
 echo [INFO] Las imagenes se construyen con el tag 'latest' para que coincidan
-echo        con los manifiestos de deploy/k8s/ (imagePullPolicy: IfNotPresent).
+echo        con los manifiestos de deploy/k8s/ imagePullPolicy: IfNotPresent.
 echo.
 
 pushd "%REPO_ROOT%" >nul
@@ -207,7 +207,7 @@ pushd "%REPO_ROOT%" >nul
 rem --- Engine ---
 echo [INFO] Construyendo imagen: %IMG_ENGINE%
 docker build -t %IMG_ENGINE% -f services\engine\Dockerfile services\engine
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] Fallo al construir la imagen del Engine.
     goto :error
 )
@@ -217,7 +217,7 @@ echo.
 rem --- Audit Logger ---
 echo [INFO] Construyendo imagen: %IMG_AUDIT%
 docker build -t %IMG_AUDIT% -f services\audit-logger\Dockerfile services\audit-logger
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] Fallo al construir la imagen del Audit Logger.
     goto :error
 )
@@ -227,7 +227,7 @@ echo.
 rem --- Orchestrator ---
 echo [INFO] Construyendo imagen: %IMG_ORCH%
 docker build -t %IMG_ORCH% -f services\orchestrator\Dockerfile services\orchestrator
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] Fallo al construir la imagen del Orchestrator.
     goto :error
 )
@@ -244,7 +244,7 @@ rem   docker build --build-arg VITE_ENGINE_API_URL=http://localhost:9090 ...
 echo [INFO] Construyendo imagen: %IMG_DESIGNER%
 echo        (VITE_ENGINE_API_URL=http://localhost:%PORT_ENGINE%, VITE_AUDIT_API_URL=http://localhost:%PORT_AUDIT%)
 docker build -t %IMG_DESIGNER% -f apps\designer\Dockerfile apps\designer
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] Fallo al construir la imagen del Designer.
     goto :error
 )
@@ -260,12 +260,12 @@ rem  kind load docker-image hace que el cluster use las imagenes locales
 rem  sin necesidad de un registry externo ni credenciales.
 rem ============================================================================
 echo.
-echo ── PASO 3: Cargando imagenes en el cluster kind ────────────────────────────
+echo -- PASO 3: Cargando imagenes en el cluster kind -------------------------
 echo.
 
 echo [INFO] Cargando %IMG_ENGINE% en kind...
 kind load docker-image %IMG_ENGINE% --name %CLUSTER_NAME%
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] No se pudo cargar %IMG_ENGINE% en kind.
     goto :error
 )
@@ -273,7 +273,7 @@ echo [OK] %IMG_ENGINE% cargada.
 
 echo [INFO] Cargando %IMG_AUDIT% en kind...
 kind load docker-image %IMG_AUDIT% --name %CLUSTER_NAME%
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] No se pudo cargar %IMG_AUDIT% en kind.
     goto :error
 )
@@ -281,7 +281,7 @@ echo [OK] %IMG_AUDIT% cargada.
 
 echo [INFO] Cargando %IMG_ORCH% en kind...
 kind load docker-image %IMG_ORCH% --name %CLUSTER_NAME%
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] No se pudo cargar %IMG_ORCH% en kind.
     goto :error
 )
@@ -289,7 +289,7 @@ echo [OK] %IMG_ORCH% cargada.
 
 echo [INFO] Cargando %IMG_DESIGNER% en kind...
 kind load docker-image %IMG_DESIGNER% --name %CLUSTER_NAME%
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] No se pudo cargar %IMG_DESIGNER% en kind.
     goto :error
 )
@@ -303,10 +303,10 @@ rem  Se usa PowerShell para generar 32 bytes aleatorios en base64 (44 chars).
 rem  Este valor siempre cumple el requisito de longitud >= 32 del engine.
 rem ============================================================================
 echo.
-echo ── PASO 4: Generando clave AES-256 para los secretos ───────────────────────
+echo -- PASO 4: Generando clave AES-256 para los secretos --------------------
 echo.
 
-for /f "delims=" %%K in ('powershell -NoProfile -Command "[System.Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))"') do set AES_KEY=%%K
+for /f "delims=" %%K in ('powershell -NoProfile -Command "$b = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b)"') do set AES_KEY=%%K
 
 if "!AES_KEY!"=="" (
     echo [ERROR] No se pudo generar la clave AES con PowerShell.
@@ -322,13 +322,13 @@ rem  PASO 5 — Aplicar manifiestos Kubernetes via kustomize
 rem  (equivale al Paso 6 de la guia: "kubectl apply -k deploy/k8s/")
 rem ============================================================================
 echo.
-echo ── PASO 5: Aplicando manifiestos Kubernetes ────────────────────────────────
+echo -- PASO 5: Aplicando manifiestos Kubernetes ----------------------------
 echo.
 
 pushd "%REPO_ROOT%" >nul
 
 kubectl apply -k deploy\k8s
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] Fallo al aplicar los manifiestos con kustomize.
     echo         Comprueba que deploy\k8s\kustomization.yaml es correcto.
     goto :error
@@ -346,14 +346,14 @@ rem  b) Actualizar ALLOWED_ORIGINS en engine y audit-logger para CORS local
 rem     (los manifiestos usan "http://designer" que no resuelve desde el browser)
 rem ============================================================================
 echo.
-echo ── PASO 6: Parchando secretos y CORS para localhost ────────────────────────
+echo -- PASO 6: Parchando secretos y CORS para localhost -------------------
 echo.
 
 echo [INFO] Actualizando engine-secret con la clave AES generada...
 kubectl -n %NAMESPACE% patch secret engine-secret ^
     --type=merge ^
     -p "{\"stringData\":{\"SECRETS_AES_KEY\":\"!AES_KEY!\"}}"
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] No se pudo parchear el secret engine-secret.
     goto :error
 )
@@ -363,7 +363,7 @@ echo [INFO] Actualizando ALLOWED_ORIGINS del engine a '%LOCAL_ORIGINS%'...
 kubectl -n %NAMESPACE% patch configmap engine-config ^
     --type=merge ^
     -p "{\"data\":{\"ALLOWED_ORIGINS\":\"%LOCAL_ORIGINS%\"}}"
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] No se pudo parchear engine-config.
     goto :error
 )
@@ -373,7 +373,7 @@ echo [INFO] Actualizando ALLOWED_ORIGINS del audit-logger a '%LOCAL_ORIGINS%'...
 kubectl -n %NAMESPACE% patch configmap audit-logger-config ^
     --type=merge ^
     -p "{\"data\":{\"ALLOWED_ORIGINS\":\"%LOCAL_ORIGINS%\"}}"
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] No se pudo parchear audit-logger-config.
     goto :error
 )
@@ -390,7 +390,7 @@ rem  PASO 7 — Esperar a que PostgreSQL este listo
 rem  (requisito previo para inicializar las bases de datos)
 rem ============================================================================
 echo.
-echo ── PASO 7: Esperando a que PostgreSQL este listo ───────────────────────────
+echo -- PASO 7: Esperando a que PostgreSQL este listo ----------------------
 echo.
 
 echo [INFO] Esperando al pod de PostgreSQL (timeout: %POD_TIMEOUT%s)...
@@ -398,7 +398,7 @@ kubectl -n %NAMESPACE% wait pod ^
     --selector=app=postgres ^
     --for=condition=Ready ^
     --timeout=%POD_TIMEOUT%s
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] PostgreSQL no estuvo listo en %POD_TIMEOUT% segundos.
     echo         Comprueba los eventos: kubectl -n %NAMESPACE% describe pod -l app=postgres
     goto :error
@@ -406,9 +406,15 @@ if %ERRORLEVEL% neq 0 (
 echo [OK] PostgreSQL esta listo.
 
 rem Obtener el nombre del pod de postgres para el kubectl exec
-for /f "delims=" %%P in ('kubectl -n %NAMESPACE% get pod -l app=postgres -o jsonpath={.items[0].metadata.name} 2^>nul') do set POSTGRES_POD=%%P
+rem kubectl get pods sin headers devuelve: NAME READY STATUS ...
+rem Extraemos el nombre (primer token) de la primera fila con --no-headers
+for /f "usebackq tokens=*" %%P in (`kubectl get pods -n %NAMESPACE% -l app^=postgres -o jsonpath^="{.items[0].metadata.name}"`) do (
+    set "POSTGRES_POD=%%P"
+)
 if "!POSTGRES_POD!"=="" (
     echo [ERROR] No se encontro el pod de PostgreSQL.
+    echo         Salida de diagnostico: kubectl -n %NAMESPACE% get pods -l app=postgres
+    kubectl -n %NAMESPACE% get pods -l app=postgres
     goto :error
 )
 echo [INFO] Pod PostgreSQL: !POSTGRES_POD!
@@ -420,31 +426,37 @@ rem  (equivale al Paso 5 de la guia)
 rem  Se copian los scripts SQL al pod y se ejecutan en orden.
 rem ============================================================================
 echo.
-echo ── PASO 8: Inicializando bases de datos ────────────────────────────────────
+echo -- PASO 8: Inicializando bases de datos --------------------------------
 echo.
 
-echo [INFO] Copiando scripts SQL al pod...
-kubectl -n %NAMESPACE% cp "%REPO_ROOT%\init-db\01-init.sql" "!POSTGRES_POD!:/tmp/01-init.sql"
-kubectl -n %NAMESPACE% cp "%REPO_ROOT%\init-db\02-audit-schema.sql" "!POSTGRES_POD!:/tmp/02-audit-schema.sql"
-kubectl -n %NAMESPACE% cp "%REPO_ROOT%\init-db\03-config-schema.sql" "!POSTGRES_POD!:/tmp/03-config-schema.sql"
-echo [OK] Scripts copiados.
+echo [INFO] Copiando scripts SQL al pod %POSTGRES_POD%...
+
+kubectl -n %NAMESPACE% cp "init-db/01-init.sql" "!POSTGRES_POD!:/tmp/01-init.sql"
+kubectl -n %NAMESPACE% cp "init-db/02-audit-schema.sql" "!POSTGRES_POD!:/tmp/02-audit-schema.sql"
+kubectl -n %NAMESPACE% cp "init-db/03-config-schema.sql" "!POSTGRES_POD!:/tmp/03-config-schema.sql"
+
+if %errorlevel% equ 0 (
+    echo [OK] Scripts copiados correctamente.
+) else (
+    echo [ERROR] Hubo un problema al copiar los archivos.
+)
 
 echo [INFO] Ejecutando 01-init.sql  (crea flowjs_audit y flowjs_config)...
 kubectl -n %NAMESPACE% exec "!POSTGRES_POD!" -- psql -U admin -f /tmp/01-init.sql
-if %ERRORLEVEL% neq 0 (
-    echo [AVISO] El script 01-init.sql reporto errores (puede ser normal si las DBs ya existen).
+if errorlevel 1 (
+    echo [AVISO] El script 01-init.sql reporto errores ^(puede ser normal si las DBs ya existen^).
 )
 
 echo [INFO] Ejecutando 02-audit-schema.sql  (tablas executions y activity_logs)...
 kubectl -n %NAMESPACE% exec "!POSTGRES_POD!" -- psql -U admin -f /tmp/02-audit-schema.sql
-if %ERRORLEVEL% neq 0 (
-    echo [AVISO] El script 02-audit-schema.sql reporto errores (puede ser normal si las tablas ya existen).
+if errorlevel 1 (
+    echo [AVISO] El script 02-audit-schema.sql reporto errores ^(puede ser normal si las tablas ya existen^).
 )
 
 echo [INFO] Ejecutando 03-config-schema.sql  (tablas processes y secrets)...
 kubectl -n %NAMESPACE% exec "!POSTGRES_POD!" -- psql -U admin -f /tmp/03-config-schema.sql
-if %ERRORLEVEL% neq 0 (
-    echo [AVISO] El script 03-config-schema.sql reporto errores (puede ser normal si las tablas ya existen).
+if errorlevel 1 (
+    echo [AVISO] El script 03-config-schema.sql reporto errores ^(puede ser normal si las tablas ya existen^).
 )
 echo [OK] Bases de datos inicializadas.
 echo.
@@ -454,7 +466,7 @@ rem  PASO 9 — Esperar a que todos los pods esten en Running/Ready
 rem  (equivale al Paso 7 de la guia: "verificar el estado del despliegue")
 rem ============================================================================
 echo.
-echo ── PASO 9: Esperando a que todos los pods esten listos ─────────────────────
+echo -- PASO 9: Esperando a que todos los pods esten listos ----------------
 echo.
 
 echo [INFO] Esperando a todos los deployments (timeout: %POD_TIMEOUT%s)...
@@ -462,13 +474,13 @@ kubectl -n %NAMESPACE% wait deployment ^
     --all ^
     --for=condition=Available ^
     --timeout=%POD_TIMEOUT%s
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [ERROR] No todos los deployments alcanzaron el estado Available.
     echo.
     echo         Estado actual de los pods:
     kubectl -n %NAMESPACE% get pods
     echo.
-    echo         Consulta la seccion 13 (Resolucion de problemas) de la guia.
+    echo         Consulta la seccion 13 ^(Resolucion de problemas^) de la guia.
     goto :error
 )
 echo.
@@ -483,19 +495,19 @@ rem  Cada port-forward se abre en una ventana CMD minimizada independiente.
 rem  Cierra esas ventanas cuando hayas terminado de usar el entorno.
 rem ============================================================================
 echo.
-echo ── PASO 10: Iniciando port-forwards ────────────────────────────────────────
+echo -- PASO 10: Iniciando port-forwards -----------------------------------────
 echo.
 echo [INFO] Se abriran 3 ventanas CMD minimizadas con los port-forwards.
 echo        Cierralas cuando termines de usar el entorno.
 echo.
 
-echo [INFO] Port-forward Designer UI  -> http://localhost:%PORT_DESIGNER%
+echo [INFO] Port-forward Designer UI  -^> http://localhost:%PORT_DESIGNER%
 START "FlowJS Designer :%PORT_DESIGNER%" /MIN cmd /k "kubectl -n %NAMESPACE% port-forward svc/designer %PORT_DESIGNER%:80"
 
-echo [INFO] Port-forward Engine API   -> http://localhost:%PORT_ENGINE%
+echo [INFO] Port-forward Engine API   -^> http://localhost:%PORT_ENGINE%
 START "FlowJS Engine :%PORT_ENGINE%" /MIN cmd /k "kubectl -n %NAMESPACE% port-forward svc/engine %PORT_ENGINE%:%PORT_ENGINE%"
 
-echo [INFO] Port-forward Audit Logger -> http://localhost:%PORT_AUDIT%
+echo [INFO] Port-forward Audit Logger -^> http://localhost:%PORT_AUDIT%
 START "FlowJS AuditLogger :%PORT_AUDIT%" /MIN cmd /k "kubectl -n %NAMESPACE% port-forward svc/audit-logger %PORT_AUDIT%:8080"
 
 echo.
@@ -508,10 +520,10 @@ rem  PASO 11 — Verificar health checks
 rem  (equivale al Paso 9 de la guia)
 rem ============================================================================
 echo.
-echo ── PASO 11: Verificando health checks ──────────────────────────────────────
+echo -- PASO 11: Verificando health checks --------------------------------
 echo.
 
-echo [INFO] Comprobando /health del Engine (http://localhost:%PORT_ENGINE%/health)...
+echo [INFO] Comprobando /health del Engine http://localhost:%PORT_ENGINE%/health...
 set HEALTH_OK=0
 for /l %%i in (1,1,10) do (
     if !HEALTH_OK! equ 0 (
@@ -521,7 +533,7 @@ for /l %%i in (1,1,10) do (
             set HEALTH_OK=1
             echo [OK] Engine /health respondio 200 OK.
         ) else (
-            echo [INFO] Intento %%i/10 (codigo: !HTTP_CODE!) ... esperando al engine...
+            echo [INFO] Intento %%i/10 ^(codigo: !HTTP_CODE!^) ... esperando al engine...
             timeout /t 3 /nobreak >nul
         )
     )
@@ -531,7 +543,7 @@ if !HEALTH_OK! equ 0 (
     echo         kubectl -n %NAMESPACE% logs -l app=engine --tail=30
 )
 
-echo [INFO] Comprobando /health del Audit Logger (http://localhost:%PORT_AUDIT%/health)...
+echo [INFO] Comprobando /health del Audit Logger http://localhost:%PORT_AUDIT%/health...
 set HEALTH_OK=0
 for /l %%i in (1,1,10) do (
     if !HEALTH_OK! equ 0 (
@@ -540,7 +552,7 @@ for /l %%i in (1,1,10) do (
             set HEALTH_OK=1
             echo [OK] Audit Logger /health respondio 200 OK.
         ) else (
-            echo [INFO] Intento %%i/10 (codigo: !HTTP_CODE!) ... esperando al audit-logger...
+            echo [INFO] Intento %%i/10 ^(codigo: !HTTP_CODE!^) ... esperando al audit-logger...
             timeout /t 3 /nobreak >nul
         )
     )
@@ -558,7 +570,7 @@ rem  Se usa PowerShell Invoke-RestMethod para evitar problemas de escape de
 rem  caracteres especiales de JSON en CMD de Windows.
 rem ============================================================================
 echo.
-echo ── PASO 12: Smoke test — flujo 'hola-mundo-kind' ───────────────────────────
+echo -- PASO 12: Smoke test - flujo 'hola-mundo-kind' -----------------------
 echo.
 echo [INFO] Creando flujo de prueba via POST /api/v1/processes ...
 
@@ -590,15 +602,15 @@ echo.
 echo   Cluster kind : %CLUSTER_NAME%
 echo   Namespace    : %NAMESPACE%
 echo.
-echo   Servicios accesibles (port-forward activo):
-echo   ┌───────────────────────────────────────────────────────────┐
-echo   │  Designer UI    ->  http://localhost:%PORT_DESIGNER%                 │
-echo   │  Engine API     ->  http://localhost:%PORT_ENGINE%                 │
-echo   │  Audit Logger   ->  http://localhost:%PORT_AUDIT%                 │
-echo   └───────────────────────────────────────────────────────────┘
+echo   Servicios accesibles ^(port-forward activo^):
+echo   +-------+-------+-------+-------+-------+-------+-------+-------+
+echo   ^|  Designer UI    -^>  http://localhost:%PORT_DESIGNER%                 ^|
+echo   ^|  Engine API     -^>  http://localhost:%PORT_ENGINE%                 ^|
+echo   ^|  Audit Logger   -^>  http://localhost:%PORT_AUDIT%                 ^|
+echo   +-------+-------+-------+-------+-------+-------+-------+-------+
 echo.
 echo   Comandos utiles:
-echo   ─────────────────────────────────────────────────────────────
+echo   ---------------------------------------------------------------
 echo   Ver todos los pods:
 echo     kubectl -n %NAMESPACE% get pods
 echo.
@@ -635,7 +647,7 @@ echo   [ERROR] El script termino con errores.
 echo.
 echo   Sugerencias:
 echo     - Revisa los mensajes anteriores para identificar el fallo.
-echo     - Consulta la seccion 13 (Resolucion de problemas) de:
+echo     - Consulta la seccion 13 ^(Resolucion de problemas^) de:
 echo         docs\guia-despliegue-kubernetes.md
 echo     - Para ver el estado del cluster:
 echo         kubectl -n %NAMESPACE% get pods
